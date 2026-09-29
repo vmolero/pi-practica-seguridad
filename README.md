@@ -23,4 +23,10 @@ npm run build        # Build the client
 npm run start:server # Run only the server
 ```
 
-The example API endpoint is `GET /api/health`.
+The API includes `GET /api/health` and a SQLite-backed notes resource:
+
+- `GET /api/notes` lists saved notes.
+- `POST /api/notes` creates a note with a JSON body such as `{ "content": "First note" }`.
+- `DELETE /api/notes/:id` deletes a note by ID.
+
+The SQLite database is created automatically at `server/data/app.sqlite` and persists across server restarts.
