@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f4ed" />
+    <title>Client + Server</title>
+  </head>
+  <body>
+    <main class="layout">
+      <header class="topbar">
+        <a class="wordmark" href="/" aria-label="Client and server home">
+          <span class="wordmark-icon" aria-hidden="true">C/S</span>
+          <span>JavaScript workspace</span>
+        </a>
+        <span class="environment"><span class="environment-dot"></span>Development</span>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">One codebase, two processes</p>
+        <h1 id="page-title">Client meets<br /><span>server.</span></h1>
+        <p class="description">A Vite front end and an Express API, working together from one project root.</p>
+      </section>
+
+      <section class="service-panel" aria-labelledby="connection-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Live connection</p>
+            <h2 id="connection-title">API status</h2>
+          </div>
+          <span id="status-indicator" class="status-indicator" aria-hidden="true"></span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Server response</span>
+          <output id="server-status" aria-live="polite">Checking connection...</output>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Endpoint</span>
+          <code>GET /api/health</code>
+        </div>
+        <button id="check-button" type="button">
+          <span aria-hidden="true">↻</span>
+          Check connection
+        </button>
+      </section>
+
+      <footer class="footer">
+        <span>Client <code>:5173</code></span>
+        <span class="footer-divider" aria-hidden="true"></span>
+        <span>Server <code>:3000</code></span>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
