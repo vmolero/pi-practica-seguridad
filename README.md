@@ -30,3 +30,13 @@ The API includes `GET /api/health` and a SQLite-backed notes resource:
 - `DELETE /api/notes/:id` deletes a note by ID.
 
 The SQLite database is created automatically at `server/data/app.sqlite` and persists across server restarts.
+
+## Database migrations
+
+```sh
+npm run db:make --workspace=server -- migration_name
+npm run db:migrate --workspace=server
+npm run db:rollback --workspace=server
+```
+
+The first migration creates the `USER` table with `name`, `email`, and `isAdmin` columns.
