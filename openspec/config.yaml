@@ -1,0 +1,55 @@
+schema: spec-driven
+
+context: |
+  Práctica de la asignatura Protección de la Información (UA, curso 2026-2027):
+  app web SaaS cliente/servidor para que los empleados de una empresa guarden sus
+  tarjetas de forma segura. El enunciado exige criptografía asimétrica para la
+  autenticación de servidor y usuarios, cifrado AES con claves aleatorias
+  gestionadas con las claves asimétricas de cada usuario, contramedidas (hash,
+  sal, PBKDF, firma de claves públicas, integridad, doble factor, conocimiento
+  cero) y, en fase 2, compartir datos cifrados entre usuarios.
+  Escribe todos los artefactos en español.
+  El software debe poder ejecutarse en Windows (además de Linux).
+  Stack: Vite + React en JavaScript (sin TypeScript), Node.js + Express + Knex + SQLite.
+  Reparto del trabajo: la CAPA DE SEGURIDAD (primitivas y protocolos criptográficos:
+  derivación de claves, hash de contraseñas, pares de claves asimétricas, cifrado
+  AES de los datos, envoltura de claves, firma, integridad, doble factor,
+  autenticación por reto-respuesta) la implementa el equipo de alumnos a mano.
+  El resto (interfaz, API, persistencia, CRUD, roles, infraestructura, tests de
+  integración) lo implementa principalmente Claude, programando contra las
+  interfaces de la capa de seguridad y usando implementaciones provisionales
+  (stubs) claramente marcadas mientras el equipo no entregue la real.
+  En tasks.md, marca cada tarea como [equipo] o [claude].
+  Fechas: primera memoria (fase 1) 2026-11-01; entrega final (fase 2) 2027-01-10.
+  La memoria debe describir los procesos seguros con notación inequívoca.
+
+# Project context (optional)
+# Add only constraints that should guide OpenSpec artifacts and workflows.
+# Include constraints an agent cannot infer by reading the code.
+# Keep general project documentation and discoverable codebase facts out.
+# Example:
+#   context: |
+#     Designs and tasks must cover Windows, macOS, and Linux
+#     Write all artifacts in Spanish
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
