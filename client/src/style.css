@@ -11,6 +11,7 @@
   --line: #d9ded5;
   --green: #216a4b;
   --mono: 'DM Mono', monospace;
+  --danger: #bf5144;
 }
 
 * {
@@ -231,6 +232,70 @@ button span {
   width: 1px;
   height: 14px;
   background: var(--line);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field input {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+  color: var(--ink);
+  font-size: 14px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(33, 106, 75, 0.15);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field input:disabled {
+  opacity: 0.7;
+}
+
+.field-error,
+.form-alert {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.form-alert:empty {
+  display: none;
+}
+
+.login-form button {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+h1:focus {
+  outline: none;
 }
 
 @keyframes reveal {
