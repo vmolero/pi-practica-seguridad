@@ -28,7 +28,6 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │           └── SessionView.jsx  # Vista de sesión iniciada con "Cerrar sesión"
 └── server/                   # Backend: Node.js + Express + Knex + SQLite
     ├── index.js              # Arranque: construye las dependencias y escucha el puerto
-    ├── database.js           # Recurso notes de demostración (better-sqlite3)
     ├── knexfile.cjs
     ├── migrations/           # Migraciones de Knex (tabla USER)
     ├── seeds/                # Usuarios de prueba para desarrollo
@@ -46,8 +45,7 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
             │   └── user-repository.js   # findByEmail(email)
             └── http/
                 ├── public-router.js     # /api/public (sin sesión)
-                ├── login-request.js     # Validación de la petición de login
-                └── notes-router.js      # /api/notes (demostración)
+                └── login-request.js     # Validación de la petición de login
 ```
 
 `npm run dev` en la raíz arranca a la vez el cliente (Vite, puerto 5173) y el

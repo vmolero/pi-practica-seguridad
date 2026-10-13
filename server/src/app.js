@@ -1,12 +1,10 @@
 import express from 'express';
-import { createNotesRouter } from './infrastructure/http/notes-router.js';
 import { createPublicRouter } from './infrastructure/http/public-router.js';
 
 /**
  * Crea la aplicación Express con sus dependencias ya construidas.
- * `notesStore` es opcional: si no se pasa, no se monta el recurso de notas.
  */
-export function createApp({ authService, notesStore }) {
+export function createApp({ authService }) {
   const app = express();
 
   app.disable('x-powered-by');
@@ -16,10 +14,6 @@ export function createApp({ authService, notesStore }) {
   });
 
   app.use('/api/public', createPublicRouter({ authService }));
-
-  if (notesStore) {
-    app.use('/api/notes', createNotesRouter({ notesStore }));
-  }
 
   // Cualquier error que ningún router haya tratado.
   // eslint-disable-next-line no-unused-vars

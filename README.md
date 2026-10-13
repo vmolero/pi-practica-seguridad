@@ -67,19 +67,16 @@ La API del servidor incluye:
 
 - `POST /api/public/login`: comprueba un email y una contraseña. Envía `{ "email": "...", "password": "..." }`. Responde `200` con `{ "email", "name", "isAdmin" }`, `401` con `{ "error": "Credenciales inválidas" }` (tanto si el email no existe como si la contraseña no coincide) o `400` si la petición está mal formada. **La contraseña se compara en texto claro.**
 - `GET /api/health`: comprueba que el servidor responde.
-- `GET /api/notes`: devuelve las notas guardadas.
-- `POST /api/notes`: crea una nota. Envía un cuerpo JSON como `{ "content": "Primera nota" }`.
-- `DELETE /api/notes/:id`: elimina una nota por su ID.
 
-`/api/public` agrupa los endpoints que no requieren sesión. El recurso `notes` es de demostración y se eliminará más adelante.
+`/api/public` agrupa los endpoints que no requieren sesión.
 
 El servidor sigue una arquitectura por capas (dominio, aplicación e infraestructura) descrita en [implementación y seguridad](docs/primera-memoria/implementacion-y-seguridad.md).
 
 ## Persistencia con SQLite
 
-El servidor y Knex usan el mismo archivo de base de datos: `server/data/app.sqlite`. El directorio `server/data/` se crea automáticamente cuando hace falta. El archivo de la base de datos está excluido de Git para no subir los datos locales.
+La base de datos es el archivo `server/data/app.sqlite`, gestionado con Knex. El directorio `server/data/` se crea automáticamente cuando hace falta. El archivo de la base de datos está excluido de Git para no subir los datos locales.
 
-Al iniciar el servidor, `server/database.js` crea la tabla `notes` si todavía no existe. La tabla `USER` se administra mediante migraciones de Knex. El historial de migraciones también se guarda en esta base de datos, en las tablas `knex_migrations` y `knex_migrations_lock`.
+La tabla `USER` se administra mediante migraciones de Knex. El historial de migraciones también se guarda en esta base de datos, en las tablas `knex_migrations` y `knex_migrations_lock`.
 
 Iniciar el servidor no ejecuta automáticamente las migraciones pendientes; aplícalas con el comando `db:migrate`.
 
