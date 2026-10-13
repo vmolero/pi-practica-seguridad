@@ -10,9 +10,10 @@ manipulación se detecte.
 
 ### Requirement: Datos de una tarjeta
 Una tarjeta SHALL contener alias, titular, número (13 a 19 dígitos que superen
-la comprobación de Luhn), mes y año de caducidad, y notas opcionales. El
-código de seguridad (CVV) no SHALL guardarse. El cliente SHALL validar estos
-campos antes de cifrarlos.
+la comprobación de Luhn), mes y año de caducidad, código de seguridad (CVV,
+3 o 4 dígitos) y notas opcionales. El CVV se guarda por decisión del proyecto,
+aunque PCI DSS lo prohíba, y se cifra como el resto de campos. El cliente
+SHALL validar estos campos antes de cifrarlos.
 
 #### Scenario: Número inválido
 - **WHEN** el usuario introduce un número de tarjeta que no supera la comprobación de Luhn
@@ -26,7 +27,7 @@ las fechas de creación y modificación.
 
 #### Scenario: Inspección de la base de datos
 - **WHEN** se consulta directamente la tabla de tarjetas
-- **THEN** no aparece en claro ningún alias, titular, número, caducidad ni nota
+- **THEN** no aparece en claro ningún alias, titular, número, caducidad, CVV ni nota
 
 ### Requirement: Clave AES aleatoria por tarjeta
 Cada versión guardada de una tarjeta SHALL cifrarse con AES de 256 bits en un

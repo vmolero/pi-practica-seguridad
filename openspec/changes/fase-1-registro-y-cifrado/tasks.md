@@ -59,7 +59,7 @@ real.
 ## 7. Bóveda de tarjetas
 
 - [ ] 7.1 [claude] Implementar `/api/cards` (listar, crear con UUID del cliente, ver, editar con control de versión y borrar) devolviendo 404 para las tarjetas ajenas; verificación: las pruebas de integración cubren los escenarios de `specs/boveda-tarjetas` que dependen del servidor.
-- [ ] 7.2 [claude] Crear la lista y el formulario de tarjetas: validación (Luhn, caducidad, sin CVV), número enmascarado con opción de mostrarlo, tarjeta dañada mostrada aparte y confirmación del borrado; verificación: pruebas unitarias de los validadores y comprobación manual del flujo completo.
+- [ ] 7.2 [claude] Crear la lista y el formulario de tarjetas: validación (Luhn, caducidad, CVV de 3 o 4 dígitos), número enmascarado con opción de mostrarlo, tarjeta dañada mostrada aparte y confirmación del borrado; verificación: pruebas unitarias de los validadores y comprobación manual del flujo completo.
 - [ ] 7.3 [claude] Documentar la bóveda en el manual de usuario; verificación: el manual cubre alta, edición, borrado y el mensaje de tarjeta dañada.
 
 ## 8. Memoria y verificación final
