@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
+    "test": "node --test",
     "db:make": "knex --knexfile knexfile.cjs migrate:make",
     "db:migrate": "knex --knexfile knexfile.cjs migrate:latest",
-    "db:rollback": "knex --knexfile knexfile.cjs migrate:rollback"
+    "db:rollback": "knex --knexfile knexfile.cjs migrate:rollback",
+    "db:seed": "knex --knexfile knexfile.cjs seed:run"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",

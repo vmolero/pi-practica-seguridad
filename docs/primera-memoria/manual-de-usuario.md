@@ -53,8 +53,14 @@ del botón el mensaje:
 
 Por seguridad, el mensaje es siempre el mismo, tanto si el email no existe como
 si la contraseña es incorrecta: la aplicación no indica cuál de los dos datos ha
-fallado. Después de un intento fallido, el campo de contraseña se vacía y hay
-que volver a escribirla.
+fallado. El email no distingue mayúsculas y minúsculas; la contraseña sí.
+
+Si no se puede contactar con el servidor o este falla, se muestra:
+
+> *No se ha podido iniciar sesión. Inténtalo de nuevo.*
+
+Después de cualquier intento fallido, el campo de contraseña se vacía y hay que
+volver a escribirla.
 
 ## Iniciar sesión
 
@@ -69,17 +75,18 @@ que volver a escribirla.
      fila **Usuario**;
    - el botón **Cerrar sesión**.
 
-En esta versión el inicio de sesión está **simulado**: todavía no hay servidor
-de autenticación, así que todavía no hay ninguna funcionalidad de gestor ni de
-empleado tras iniciar sesión. Para probarlo, usa estas credenciales:
+En esta versión el servidor ya comprueba el email y la contraseña, pero
+todavía no hay ninguna funcionalidad de gestor ni de empleado tras iniciar
+sesión. En desarrollo existen estos usuarios de prueba:
 
-| Email                  | Contraseña |
-|------------------------|------------|
-| `empleado@empresa.com` | `demo1234` |
+| Email                  | Contraseña  | Rol           |
+|------------------------|-------------|---------------|
+| `empleado@empresa.com` | `demo1234`  | Empleado      |
+| `admin@empresa.com`    | `admin1234` | Administrador |
 
-Estas credenciales **solo existen en la simulación** y desaparecerán cuando se
-conecte el backend real; a partir de entonces cada usuario entrará con su
-propio email y su propia contraseña.
+Estos usuarios solo existen en la base de datos de desarrollo. **Aviso:** en
+esta versión la contraseña se envía y se guarda sin cifrar; no uses una
+contraseña real.
 
 ## Cerrar sesión
 

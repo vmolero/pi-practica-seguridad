@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GENERIC_LOGIN_ERROR, login } from '../api/auth.js';
+import { CONNECTION_ERROR, login } from '../api/auth.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,9 +37,10 @@ export default function LoginForm({ onSuccess }) {
       const user = await login({ email: email.trim(), password });
       setPassword('');
       onSuccess(user);
-    } catch {
-      // Se muestra siempre el mismo mensaje, sea cual sea el motivo del fallo.
-      setFormError(GENERIC_LOGIN_ERROR);
+    } catch (error) {
+      // auth.js ya traduce el fallo a un mensaje genérico: credenciales
+      // incorrectas o error de conexión, sin más detalle.
+      setFormError(error.message || CONNECTION_ERROR);
       setPassword('');
       setSubmitting(false);
     }

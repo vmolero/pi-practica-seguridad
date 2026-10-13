@@ -125,8 +125,12 @@ en este paso.
 | JSON ilegible | 400 | el mismo cuerpo que el caso anterior |
 | Error inesperado | 500 | `{ "error": "Error interno del servidor" }` |
 
-Para el JSON ilegible, `createApp` añade un manejador de errores que convierte
-el error de parseo de `express.json()` en ese `400`.
+Cada router monta su propio `express.json()`. Para el JSON ilegible, el router
+público tiene un manejador de errores que convierte el error de parseo en ese
+`400`, sin afectar a los mensajes de otros recursos. `createApp` añade al final
+un manejador común para los errores que ningún router trate (`400` genérico o
+`500`). Para que los tests no abran la base de datos real, `createApp` recibe
+el recurso `notes` como dependencia opcional (`notesStore`).
 
 ### 7. Cliente
 

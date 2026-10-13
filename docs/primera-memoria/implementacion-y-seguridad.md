@@ -1,9 +1,10 @@
 # Implementación y seguridad
 
 Este documento describe cómo está organizado el código y qué medidas de
-seguridad se aplican en cada parte. Es una primera versión: en esta iteración
-solo está implementada la vista de login del cliente, sin backend de
-autenticación real.
+seguridad se aplican en cada parte. En esta iteración (paso 1) el login ya
+funciona de extremo a extremo, pero **sin ninguna medida de seguridad**: la
+contraseña viaja y se guarda en texto claro. Es la base sobre la que los pasos
+siguientes añadirán la criptografía; no es el diseño final.
 
 ## Estructura del proyecto
 
@@ -21,15 +22,32 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │       ├── App.jsx           # Decide si mostrar el login o la sesión iniciada
 │       ├── style.css
 │       ├── api/
-│       │   └── auth.js       # login() y logout(); simulados por ahora
+│       │   └── auth.js       # login() llama a la API; logout() es local
 │       └── components/
 │           ├── LoginForm.jsx    # Formulario de email y contraseña
 │           └── SessionView.jsx  # Vista de sesión iniciada con "Cerrar sesión"
 └── server/                   # Backend: Node.js + Express + Knex + SQLite
-    ├── index.js
-    ├── database.js
+    ├── index.js              # Arranque: construye las dependencias y escucha el puerto
+    ├── database.js           # Recurso notes de demostración (better-sqlite3)
     ├── knexfile.cjs
-    └── migrations/           # Migraciones de Knex (tabla USER)
+    ├── migrations/           # Migraciones de Knex (tabla USER)
+    ├── seeds/                # Usuarios de prueba para desarrollo
+    ├── test/                 # Tests con node:test
+    └── src/
+        ├── app.js            # createApp(): monta los routers y el manejo de errores
+        ├── domain/
+        │   └── user.js       # toPublicUser(): datos del usuario sin contraseña
+        ├── application/
+        │   ├── auth-service.js  # Servicio de autenticación
+        │   └── errors.js        # InvalidCredentialsError
+        └── infrastructure/
+            ├── database/
+            │   ├── knex.js              # Conexión de Knex
+            │   └── user-repository.js   # findByEmail(email)
+            └── http/
+                ├── public-router.js     # /api/public (sin sesión)
+                ├── login-request.js     # Validación de la petición de login
+                └── notes-router.js      # /api/notes (demostración)
 ```
 
 `npm run dev` en la raíz arranca a la vez el cliente (Vite, puerto 5173) y el
@@ -41,7 +59,7 @@ peticiones a `/api` al servidor, así que el navegador solo habla con un origen.
 ### Componentes
 
 - **`App.jsx`** guarda en el estado de React el usuario autenticado
-  (`{ email }`) o `null`. Si hay usuario muestra `SessionView`; si no, muestra
+  (`{ email, name, isAdmin }`) o `null`. Si hay usuario muestra `SessionView`; si no, muestra
   `LoginForm`. El estado solo vive en memoria: al recargar la página se vuelve
   a la pantalla de login.
 - **`LoginForm.jsx`** contiene el formulario. Valida los campos, llama a
@@ -56,26 +74,19 @@ peticiones a `/api` al servidor, así que el navegador solo habla con un origen.
 Toda la comunicación con el servidor relacionada con la autenticación está en
 este módulo, que exporta:
 
-- `login({ email, password })`: devuelve `{ email }` si las credenciales son
-  válidas y lanza un `Error` con un mensaje genérico si no lo son.
-- `logout()`: cierra la sesión.
-- `GENERIC_LOGIN_ERROR`: el mensaje único de error,
-  `"Email o contraseña incorrectos."`.
+- `login({ email, password })`: envía `POST /api/public/login` con un cuerpo
+  JSON `{ email, password }` y devuelve `{ email, name, isAdmin }` si el
+  servidor responde `200`. Si responde `401`, lanza un `Error` con
+  `GENERIC_LOGIN_ERROR`; ante cualquier otro fallo (servidor caído, error
+  `5xx`, petición rechazada) lanza uno con `CONNECTION_ERROR`.
+- `logout()`: todavía no hay sesión en el servidor, así que no hace nada; el
+  cierre de sesión se limita a borrar el usuario del estado de `App`.
+- `GENERIC_LOGIN_ERROR`: `"Email o contraseña incorrectos."`.
+- `CONNECTION_ERROR`: `"No se ha podido iniciar sesión. Inténtalo de nuevo."`.
 
-En esta iteración ambas funciones están **simuladas**:
-
-- `login()` espera 800 ms para imitar la latencia de red y acepta solo las
-  credenciales de prueba `empleado@empresa.com` / `demo1234` (el email se
-  compara sin distinguir mayúsculas y minúsculas). Con cualquier otra
-  combinación lanza el error genérico. Estas credenciales están escritas en el
-  propio código del cliente, **solo existen en la simulación** y desaparecerán
-  cuando se conecte el backend real; nunca deben llegar a producción.
-- `logout()` no hace nada todavía; el cierre de sesión se limita a borrar el
-  usuario del estado de `App`.
-
-El módulo ya incluye, comentada, la llamada real a `POST /api/login`. Cuando
-exista el backend se sustituirá la simulación por esa llamada sin modificar los
-componentes.
+`LoginForm` muestra el mensaje del error que lanza `login()`. Como `auth.js`
+solo produce esos dos mensajes, la interfaz nunca muestra el texto que devuelve
+el servidor.
 
 ### Validación en el cliente
 
@@ -99,10 +110,10 @@ envía tal cual, sin recortarla.
   del navegador, y no se escribe en la consola. El campo se vacía tanto después
   de un login correcto como de uno fallido. `App` solo guarda el email del
   usuario, y únicamente en memoria.
-- **Mensajes de error genéricos.** Si el login falla, el formulario muestra
-  siempre `Email o contraseña incorrectos.`, sin indicar si el email no existe
-  o si la contraseña es incorrecta, y sin mostrar el mensaje concreto del error
-  capturado. Así no se facilita la enumeración de usuarios. El mensaje se
+- **Mensajes de error genéricos.** Si las credenciales no son válidas, el
+  formulario muestra siempre `Email o contraseña incorrectos.`, sin indicar si
+  el email no existe o si la contraseña es incorrecta. Si el fallo es de otro
+  tipo, muestra el mensaje genérico de conexión, sin detalles técnicos. Así no se facilita la enumeración de usuarios. El mensaje se
   muestra en una zona con `role="alert"` para que los lectores de pantalla lo
   anuncien.
 - **Atributos `autocomplete` adecuados.** El campo de email usa `type="email"`
@@ -115,37 +126,88 @@ envía tal cual, sin recortarla.
 - **La validación del cliente no sustituye a la del servidor.** Las
   comprobaciones anteriores solo mejoran la experiencia de usuario. Cualquiera
   puede saltárselas enviando peticiones directamente a la API, por lo que el
-  servidor deberá volver a validar todos los datos que reciba.
-- **Credenciales de prueba en el código.** Son aceptables solo porque la
-  autenticación está simulada y no protegen ningún dato real. Deben eliminarse
-  al conectar el backend.
+  servidor vuelve a validar los datos que recibe (ver más abajo).
 
-## Trabajo futuro: backend de autenticación
+## Servidor: login en texto claro (paso 1)
 
-Contrato previsto entre cliente y servidor:
+### Arquitectura por capas
 
-- `POST /api/login` con cuerpo JSON `{ "email": "...", "password": "..." }`.
-- **200**: credenciales correctas; el servidor establece la sesión.
-- **401** con cuerpo `{ "error": "Credenciales inválidas" }` si las
-  credenciales no son válidas.
+El código nuevo del servidor está en `server/src/` y se divide en tres capas.
+Las dependencias van solo hacia dentro (infraestructura → aplicación →
+dominio):
 
-El cliente no muestra el texto que devuelve el servidor: ante un 401 muestra su
-propio mensaje genérico, `Email o contraseña incorrectos.`, así que la interfaz
-no depende del texto exacto de la respuesta.
+- **Dominio** (`domain/user.js`): `toPublicUser(user)` devuelve los datos del
+  usuario que se pueden enviar al cliente, `{ email, name, isAdmin }`, y nunca
+  la contraseña.
+- **Aplicación** (`application/auth-service.js`): el servicio de autenticación.
+  `login({ email, password })` pide el usuario al repositorio y comprueba la
+  contraseña. No sabe nada de HTTP ni de la base de datos.
+- **Infraestructura**:
+  - `http/public-router.js` monta la sección pública de la API,
+    `/api/public`, con los endpoints que no requieren sesión.
+  - `http/login-request.js` comprueba la forma de la petición.
+  - `database/user-repository.js` busca usuarios en la tabla `USER` con Knex.
 
-Tareas pendientes:
+Cada pieza se crea con una función fábrica que recibe sus dependencias
+(`createAuthService({ userRepository })`, `createApp({ authService })`) y
+`server/index.js` es el único sitio que las conecta. Así los tests usan un
+repositorio en memoria o una base de datos temporal sin tocar la real.
 
-- Implementar el endpoint `POST /api/login` y sustituir la simulación de
-  `login()` en `client/src/api/auth.js` por la llamada real, eliminando las
-  credenciales de prueba.
+### Flujo de `POST /api/public/login`
+
+1. El router recibe el cuerpo JSON. Si no es JSON válido, responde `400`.
+2. `parseLoginRequest` exige que `email` y `password` sean cadenas no vacías
+   de como máximo 254 y 128 caracteres. Si no lo son, responde `400` sin
+   consultar la base de datos. El email se normaliza (sin espacios y en
+   minúsculas); la contraseña se usa tal cual.
+3. El servicio busca el usuario por email y compara la contraseña con `===`.
+   Si el usuario no existe o la contraseña no coincide, lanza
+   `InvalidCredentialsError`.
+4. El router responde `200` con `toPublicUser(user)` o `401` con
+   `{ "error": "Credenciales inválidas" }`.
+
+| Caso | Código | Cuerpo |
+| --- | --- | --- |
+| Credenciales válidas | 200 | `{ "email", "name", "isAdmin" }` |
+| Email inexistente o contraseña incorrecta | 401 | `{ "error": "Credenciales inválidas" }` |
+| Cuerpo mal formado o JSON ilegible | 400 | `{ "error": "Petición de login no válida" }` |
+| Error inesperado | 500 | `{ "error": "Error interno del servidor" }` |
+
+### Tabla `USER`
+
+| Columna | Tipo | Notas |
+| --- | --- | --- |
+| `id` | entero | Clave primaria autoincremental |
+| `name` | texto | Obligatorio |
+| `email` | texto | Obligatorio, único, siempre en minúsculas |
+| `password` | texto | Obligatorio. **En texto claro** en este paso |
+| `isAdmin` | booleano | `true` para gestores; por defecto `false` |
+
+El seed `server/seeds/01_usuarios_demo.cjs` crea un empleado y un
+administrador de prueba para desarrollo.
+
+### Lo que este paso no protege
+
+Este paso deja a propósito sin resolver todos los riesgos siguientes:
+
+- La contraseña viaja en claro por HTTP: cualquiera que observe la red la ve.
+- La contraseña se guarda en claro: quien lea la base de datos obtiene todas.
+- La comparación con `===` no es de tiempo constante.
+- No hay sesión en el servidor: la API no puede saber quién hace cada petición.
+- No hay límite de intentos de login.
+
+La comparación está aislada en una sola línea de `auth-service.js`, marcada
+como provisional, para que la capa de seguridad la sustituya sin tocar el resto
+del código.
+
+## Trabajo futuro
+
 - Implementar un endpoint de cierre de sesión que invalide la sesión en el
   servidor y llamarlo desde `logout()`.
-- Validar en el servidor el formato y la presencia de `email` y `password`.
-- Almacenar las contraseñas con una función de hash adecuada para contraseñas
-  (la librería concreta está pendiente de decidir; ver
-  [Stack tecnológico](stack-tecnologico.md)). La tabla `USER` actual todavía no
-  tiene columna para el hash de la contraseña, así que habrá que añadirla con
-  una nueva migración.
+- Cifrar el canal (HTTPS) para que la contraseña no viaje en claro.
+- Almacenar las contraseñas con una función de hash adecuada para contraseñas,
+  con sal (la librería concreta está pendiente de decidir; ver
+  [Stack tecnológico](stack-tecnologico.md)), en lugar de en texto claro.
 - Decidir el mecanismo de sesión y protegerlo (por ejemplo, cookies con
   `HttpOnly`, `Secure` y `SameSite`). Con ello la sesión sobrevivirá a una
   recarga de la página, lo que hoy no ocurre.

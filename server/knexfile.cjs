@@ -17,5 +17,9 @@ module.exports = {
       extension: 'cjs',
       loadExtensions: ['.cjs'],
     },
+    seeds: {
+      directory: join(__dirname, 'seeds'),
+      loadExtensions: ['.cjs'],
+    },
   },
 };
