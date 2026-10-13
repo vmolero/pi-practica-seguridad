@@ -15,3 +15,27 @@ export class InvalidTokenError extends Error {
     this.name = 'InvalidTokenError';
   }
 }
+
+// El usuario indicado no existe (o su identificador no tiene un formato válido).
+export class UserNotFoundError extends Error {
+  constructor() {
+    super('Usuario no encontrado');
+    this.name = 'UserNotFoundError';
+  }
+}
+
+// Ya hay otro usuario con el mismo email.
+export class DuplicateEmailError extends Error {
+  constructor() {
+    super('Ya existe un usuario con ese email');
+    this.name = 'DuplicateEmailError';
+  }
+}
+
+// Un administrador intenta eliminar su propia cuenta.
+export class SelfDeletionError extends Error {
+  constructor() {
+    super('No puedes eliminar tu propia cuenta');
+    this.name = 'SelfDeletionError';
+  }
+}

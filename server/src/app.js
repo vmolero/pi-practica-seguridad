@@ -6,7 +6,7 @@ import { createPublicRouter } from './infrastructure/http/public-router.js';
 /**
  * Crea la aplicación Express con sus dependencias ya construidas.
  */
-export function createApp({ authService, tokenService }) {
+export function createApp({ authService, tokenService, userAdminService, userRepository }) {
   const app = express();
 
   app.disable('x-powered-by');
@@ -18,6 +18,8 @@ export function createApp({ authService, tokenService }) {
   app.use('/api/public', createPublicRouter({ authService }));
   app.use('/api/private', createPrivateRouter({
     authMiddleware: createAuthMiddleware({ tokenService }),
+    userAdminService,
+    userRepository,
   }));
 
   // Cualquier error que ningún router haya tratado.

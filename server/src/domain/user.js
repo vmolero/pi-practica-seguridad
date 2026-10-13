@@ -12,3 +12,16 @@ export function toPublicUser(user) {
     isAdmin: Boolean(user.isAdmin),
   };
 }
+
+/**
+ * Datos de un usuario que ve el administrador en el panel de usuarios.
+ * Nunca incluye la contraseña.
+ */
+export function toAdminUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    isAdmin: Boolean(user.isAdmin),
+  };
+}

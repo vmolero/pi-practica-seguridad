@@ -8,6 +8,8 @@ seguridad se aplican en cada parte. El trabajo avanza en pasos pequeños:
 - **Paso 2:** sesión con un token JWT y un middleware de autenticación que
   protege la sección privada de la API. La firma del token es todavía
   **provisional** (HMAC con un secreto compartido).
+- **Paso 3:** panel de administración de usuarios (alta, cambio de nombre y
+  eliminación) y primer control de acceso por rol en el servidor.
 
 Es la base sobre la que los pasos siguientes añadirán la criptografía; no es el
 diseño final.
@@ -28,12 +30,14 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │       ├── App.jsx           # Decide si mostrar el login o la sesión iniciada
 │       ├── style.css
 │       ├── api/
+│       │   ├── admin-users.js # listUsers(), createUser(), renameUser(), deleteUser()
 │       │   ├── auth.js       # login(), getCurrentUser() y logout()
 │       │   ├── http.js       # apiFetch(): añade el token; 401 → sesión caducada
 │       │   └── session.js    # Token de sesión, solo en memoria
 │       └── components/
 │           ├── LoginForm.jsx    # Formulario de email y contraseña
-│           └── SessionView.jsx  # Vista de sesión: datos de /api/private/me
+│           ├── SessionView.jsx  # Vista de sesión: datos de /api/private/me
+│           └── UserAdminPanel.jsx # Panel de usuarios (solo administradores)
 └── server/                   # Backend: Node.js + Express + Knex + SQLite
     ├── index.js              # Arranque: construye las dependencias y escucha el puerto
     ├── knexfile.cjs
@@ -44,15 +48,16 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
         ├── app.js            # createApp(): monta los routers y el manejo de errores
         ├── config.js         # loadConfig(): puerto, secreto y caducidad del token
         ├── domain/
-        │   ├── user.js       # toPublicUser(): datos del usuario sin contraseña
+        │   ├── user.js       # toPublicUser() y toAdminUser(): datos sin contraseña
         │   └── session.js    # Claims del token ↔ usuario de la sesión
         ├── application/
         │   ├── auth-service.js  # Servicio de autenticación: login() → { token, user }
-        │   └── errors.js        # InvalidCredentialsError, InvalidTokenError
+        │   ├── user-admin-service.js # Alta, lista, cambio de nombre y borrado de usuarios
+        │   └── errors.js        # Errores de aplicación (credenciales, token, usuarios)
         └── infrastructure/
             ├── database/
             │   ├── knex.js              # Conexión de Knex
-            │   └── user-repository.js   # findByEmail(email)
+            │   └── user-repository.js   # findByEmail, findById, list, create, rename, remove
             ├── security/
             │   ├── README.md            # Contrato del servicio de tokens (equipo/Claude)
             │   ├── issuer.js            # Valor del claim iss
@@ -61,6 +66,9 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
                 ├── public-router.js     # /api/public (sin sesión)
                 ├── private-router.js    # /api/private (con sesión)
                 ├── auth-middleware.js   # Middleware de autenticación
+                ├── require-admin.js     # Middleware de rol: solo administradores
+                ├── admin-router.js      # /api/private/admin (usuarios)
+                ├── user-request.js      # Validación de las peticiones de usuarios
                 └── login-request.js     # Validación de la petición de login
 ```
 
@@ -346,8 +354,107 @@ recargar la página.
 - **Token legible en memoria.** Un script inyectado (XSS) podría leerlo
   mientras la pestaña está abierta.
 - **Sin control por rol.** `request.user.isAdmin` está disponible, pero
-  todavía ningún endpoint lo comprueba.
+  todavía ningún endpoint lo comprueba (lo añade el paso 3).
 - El token viaja sin cifrar por HTTP, igual que la contraseña.
+
+## Panel de administración de usuarios (paso 3)
+
+### Qué añade
+
+Un administrador puede listar, dar de alta, renombrar y eliminar usuarios
+desde la aplicación. Las operaciones están en `/api/private/admin/users` y
+pasan por **dos** controles seguidos: el middleware de autenticación del
+paso 2 (`401` si no hay un token válido) y un middleware de rol (`403` si el
+usuario no es administrador).
+
+| Método y ruta | Cuerpo | Respuestas |
+| --- | --- | --- |
+| `GET /api/private/admin/users` | — | `200 { users: [{ id, name, email, isAdmin }] }` |
+| `POST /api/private/admin/users` | `{ name, email, password, isAdmin? }` | `201` usuario creado · `400` · `409` email repetido |
+| `PATCH /api/private/admin/users/:id` | `{ name }` | `200` usuario actualizado · `400` · `404` |
+| `DELETE /api/private/admin/users/:id` | — | `204` · `400` si es uno mismo · `404` |
+
+Ninguna respuesta incluye la contraseña: todo lo que devuelve el servicio pasa
+por `toAdminUser()`, que solo copia `id`, `name`, `email` e `isAdmin`.
+
+### Control de acceso por rol
+
+Sea `t` el token de la petición y `c = Verify(t)` sus claims, ya comprobados
+por el middleware de autenticación. El middleware de rol
+(`require-admin.js`) permite la operación si y solo si:
+
+```text
+c.isAdmin = true  ∧  ∃ u ∈ USER : u.id = c.sub ∧ u.isAdmin = true
+```
+
+1. Si `c.isAdmin ≠ true` → `403 { "error": "Acceso denegado" }`, sin consultar
+   la base de datos.
+2. Si no, se busca el usuario `c.sub` en la tabla `USER`. Si ya no existe o ha
+   dejado de ser administrador → `403`, con el mismo cuerpo.
+3. Si todo es correcto, la petición sigue hacia la ruta.
+
+**Por qué se consulta la base de datos además del token.** El token no se
+puede revocar (paso 2): vale hasta `exp`. El borrado de usuarios crea justo el
+caso peligroso, el de un administrador eliminado cuyo token sigue siendo
+válido durante una hora. Si solo se mirase el claim `isAdmin`, podría seguir
+dando de alta y borrando usuarios. La consulta cuesta una lectura por clave
+primaria en SQLite por petición de administración, un precio despreciable para
+las operaciones más sensibles de la aplicación.
+
+El rol se comprueba **en el servidor**. Que la interfaz oculte el panel a los
+empleados es solo comodidad: un empleado que llame a la API directamente
+recibe `403`. El middleware de rol va antes que la lectura del cuerpo JSON, así
+que un empleado recibe `403` también si envía un cuerpo ilegible, y no obtiene
+información sobre la validación.
+
+### Reglas de negocio y validación
+
+- **Validación** (`user-request.js`), antes de tocar la base de datos. Si algo
+  falla, `400 { "error": "Datos de usuario no válidos" }`:
+  - `name`: de 1 a 100 caracteres después de quitar los espacios de los
+    extremos.
+  - `email`: hasta 254 caracteres, exactamente una `@` y texto a ambos lados.
+    Se guarda sin espacios y en minúsculas, como en el login.
+  - `password`: de 8 a 128 caracteres, tal cual.
+  - `isAdmin`: booleano. Si no se envía, vale `false`.
+  - Campos no previstos: se rechazan. En el `PATCH` solo se admite `name`,
+    así que no se puede usar para subir de rol a nadie.
+- **Email único.** El servicio comprueba que el email no exista antes de
+  insertar. Si dos altas simultáneas pasan esa comprobación, el índice único
+  `user_email_unique` rechaza la segunda, y ese error se traduce al mismo
+  `409`.
+- **Identificadores.** `:id` solo se acepta si es un entero positivo. Si no lo
+  es, se responde `404`, igual que con un id inexistente, para no distinguir
+  formatos.
+- **Autoeliminación.** Un administrador no puede eliminar su propia cuenta
+  (`400`). Como quien borra siempre es un administrador distinto del borrado,
+  siempre queda al menos un administrador.
+
+### Panel en el cliente
+
+`UserAdminPanel.jsx` se monta en la vista de sesión solo si el usuario es
+administrador. Usa `admin-users.js`, que trabaja sobre `apiFetch`, así que un
+`401` lleva al login con el aviso de sesión caducada, como en el paso 2. Un
+`403` se traduce en `ForbiddenError`: el panel muestra
+`No tienes permiso para gestionar usuarios.` y oculta las acciones. La
+confirmación del borrado se hace en la propia fila, sin diálogos del
+navegador.
+
+### Lo que este paso no protege
+
+- **El gestor conoce la contraseña inicial**, y se guarda en texto claro como
+  el resto (PROVISIONAL). La fase 1 sustituirá el alta directa por una
+  invitación en la que el empleado elige su contraseña en el navegador.
+- **Un usuario eliminado conserva su token.** Las rutas de administración lo
+  rechazan porque consultan la base de datos, pero `GET /api/private/me` sigue
+  respondiendo con los datos del token hasta que caduca.
+- **El nombre del token puede quedar desactualizado.** Si un administrador
+  cambia su propio nombre, `/me` devuelve el nombre antiguo hasta el siguiente
+  login, porque sale de los claims.
+- **Borrado físico.** No hay desactivación ni histórico. Hoy no hay datos
+  asociados a un usuario, pero cuando existan tarjetas habrá que decidir qué
+  pasa con ellas.
+- No hay registro de auditoría de quién creó o borró cada cuenta.
 
 ## Trabajo futuro
 
@@ -364,5 +471,9 @@ recargar la página.
   existe como si la contraseña es incorrecta.
 - Limitar los intentos de login fallidos para dificultar ataques de fuerza
   bruta.
-- Control de acceso por rol (gestor / empleado) en cada endpoint, a partir de
-  `request.user.isAdmin`, y en la interfaz, que hoy no distingue roles.
+- Extender el control de acceso por rol a los endpoints que vengan (tarjetas,
+  contratos) y decidir si la comprobación contra la base de datos del paso 3
+  se aplica a toda la sección privada, para que un usuario eliminado pierda el
+  acceso en cuanto se le borra.
+- Sustituir el alta con contraseña inicial por la invitación de la fase 1 y
+  añadir la desactivación de cuentas y un registro de auditoría.

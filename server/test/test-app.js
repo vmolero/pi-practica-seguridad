@@ -1,5 +1,6 @@
 import { createApp } from '../src/app.js';
 import { createAuthService } from '../src/application/auth-service.js';
+import { createUserAdminService } from '../src/application/user-admin-service.js';
 import { createUserRepository } from '../src/infrastructure/database/user-repository.js';
 import { TOKEN_ISSUER } from '../src/infrastructure/security/issuer.js';
 import { createTokenService } from '../src/infrastructure/security/token-service.js';
@@ -18,12 +19,11 @@ export function createTestTokenService(options = {}) {
 export async function startTestServer() {
   const database = await createTestDatabase();
   const tokenService = createTestTokenService();
-  const authService = createAuthService({
-    userRepository: createUserRepository(database.knex),
-    tokenService,
-  });
+  const userRepository = createUserRepository(database.knex);
+  const authService = createAuthService({ userRepository, tokenService });
+  const userAdminService = createUserAdminService({ userRepository });
 
-  const server = createApp({ authService, tokenService }).listen(0);
+  const server = createApp({ authService, tokenService, userAdminService, userRepository }).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
 
   return {

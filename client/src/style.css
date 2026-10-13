@@ -298,6 +298,139 @@ h1:focus {
   outline: none;
 }
 
+/* Panel de administración de usuarios */
+
+.admin-panel {
+  width: 100%;
+  margin-top: 28px;
+  margin-bottom: 28px;
+}
+
+.admin-panel > .form-alert {
+  margin-top: 16px;
+}
+
+.admin-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.user-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.user-table th {
+  padding: 14px 8px 10px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.user-table td {
+  padding: 12px 8px 12px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.self-tag {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.row-actions button {
+  margin-top: 0;
+  padding: 7px 10px;
+}
+
+.confirm-text {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+button.secondary {
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: white;
+  border-color: var(--green);
+  color: var(--green);
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: #9e3f34;
+}
+
+.inline-form input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.inline-form input:focus,
+.checkbox-field input:focus-visible {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(33, 106, 75, 0.15);
+}
+
+.admin-form {
+  max-width: 420px;
+  margin-top: 12px;
+}
+
+h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 @keyframes reveal {
   from {
     opacity: 0;
@@ -324,6 +457,39 @@ h1:focus {
 
   .service-panel {
     padding: 22px 20px 23px;
+  }
+
+  .user-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .user-table tr {
+    display: block;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .user-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border-bottom: 0;
+  }
+
+  .user-table td[data-label]::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .row-actions {
+    justify-content: flex-start;
   }
 }
 

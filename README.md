@@ -6,9 +6,9 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 
 ## Estado actual
 
-- **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión.
-- **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), un endpoint de salud y un recurso de notas de demostración que el cliente ya no usa.
-- **Seguridad:** casi ninguna todavía, a propósito. La contraseña **viaja y se guarda en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Los pasos siguientes añadirán la criptografía.
+- **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión. Los administradores ven además un panel para dar de alta, renombrar y eliminar usuarios.
+- **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), una sección de administración de usuarios solo para administradores (`/api/private/admin/users`), un endpoint de salud y un recurso de notas de demostración que el cliente ya no usa.
+- **Seguridad:** casi ninguna todavía, a propósito. La contraseña **viaja y se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Los pasos siguientes añadirán la criptografía.
 - **Planificación:** el trabajo se divide en pasos pequeños propuestos como cambios de OpenSpec. Consulta la sección [Planificación](#planificación).
 
 ## Estructura
@@ -77,6 +77,8 @@ El seed crea dos usuarios de prueba para desarrollo:
 
 Con credenciales incorrectas, la vista muestra el error genérico `Email o contraseña incorrectos.`; si el servidor no responde, `No se ha podido iniciar sesión. Inténtalo de nuevo.`. Tras iniciar sesión se muestran el nombre y el email que devuelve `GET /api/private/me`, y un botón para cerrar sesión. La vista vuelve a consultar `/me` cada vez que la ventana recupera el foco. Si el token ha caducado o no es válido, vuelve al login con el aviso `Tu sesión ha caducado. Vuelve a iniciar sesión.`. El token solo se guarda en memoria, así que al recargar la página vuelve a aparecer el login.
 
+Si el usuario es administrador, debajo aparece el panel **Usuarios**: una tabla con el nombre, el email y el rol de cada cuenta, un formulario para dar de alta usuarios (nombre, email, contraseña inicial y si es administrador), un botón para editar el nombre en la propia fila y otro para eliminar, que pide confirmación en la misma fila. La fila propia no tiene botón de eliminar. Los errores del servidor (por ejemplo, `Ya existe un usuario con ese email`) se muestran encima de la tabla. Si el servidor deja de reconocer al usuario como administrador, el panel muestra `No tienes permiso para gestionar usuarios.` y oculta las acciones. Los empleados no ven el panel. Las llamadas están en `client/src/api/admin-users.js` y el panel en `client/src/components/UserAdminPanel.jsx`.
+
 El comportamiento de la pantalla se describe en el [manual de usuario](docs/primera-memoria/manual-de-usuario.md), y sus medidas de seguridad en [implementación y seguridad](docs/primera-memoria/implementacion-y-seguridad.md).
 
 ## API
@@ -85,9 +87,15 @@ La API del servidor incluye:
 
 - `POST /api/public/login`: comprueba un email y una contraseña. Envía `{ "email": "...", "password": "..." }`. Responde `200` con `{ "token", "user": { "email", "name", "isAdmin" } }`, donde `token` es el JWT de sesión, `401` con `{ "error": "Credenciales inválidas" }` (tanto si el email no existe como si la contraseña no coincide) o `400` si la petición está mal formada. **La contraseña se compara en texto claro.**
 - `GET /api/private/me`: devuelve `{ "email", "name", "isAdmin" }` del usuario del token. Requiere `Authorization: Bearer <token>`.
+- `GET /api/private/admin/users`: lista los usuarios. Responde `200` con `{ "users": [{ "id", "name", "email", "isAdmin" }] }` ordenados por `id`, nunca la contraseña.
+- `POST /api/private/admin/users`: da de alta un usuario. Envía `{ "name", "email", "password", "isAdmin" }` (`isAdmin` es opcional y por defecto `false`). Responde `201` con el usuario creado, `409` con `{ "error": "Ya existe un usuario con ese email" }` o `400` con `{ "error": "Datos de usuario no válidos" }`. Reglas: nombre de 1 a 100 caracteres, email con una sola `@` y hasta 254 caracteres (se guarda en minúsculas y sin espacios), contraseña de 8 a 128 caracteres. **La contraseña inicial se guarda en texto claro.**
+- `PATCH /api/private/admin/users/:id`: cambia el nombre. Envía `{ "name" }` y nada más. Cualquier otro campo da `400`. Responde `200` con el usuario actualizado, o `404` con `{ "error": "Usuario no encontrado" }`.
+- `DELETE /api/private/admin/users/:id`: elimina el usuario y responde `204`. Un administrador no puede eliminarse a sí mismo (`400` con `{ "error": "No puedes eliminar tu propia cuenta" }`). Si el usuario no existe responde `404`.
 - `GET /api/health`: comprueba que el servidor responde.
 
 `/api/public` agrupa los endpoints que no requieren sesión. Todo lo que hay bajo `/api/private` pasa antes por el middleware de autenticación, que verifica la firma, el emisor y la caducidad del token y deja el usuario y su rol en `request.user`. Ante cualquier fallo responde `401` con `{ "error": "No autenticado" }` y la cabecera `WWW-Authenticate: Bearer`, sin indicar la causa.
+
+Las rutas de `/api/private/admin` exigen además que el usuario sea administrador. Se comprueba el claim `isAdmin` del token y también, en cada petición, que el usuario siga existiendo y siga siendo administrador en la base de datos. Si no se cumple, responden `403` con `{ "error": "Acceso denegado" }`.
 
 Ejemplo con `curl` (con el servidor en marcha y el seed aplicado):
 
@@ -103,6 +111,26 @@ curl -s http://localhost:3000/api/private/me -H "Authorization: Bearer $TOKEN"
 
 # 3. Sin token → 401 {"error":"No autenticado"}
 curl -s -i http://localhost:3000/api/private/me
+```
+
+Administración de usuarios con `curl`, como administrador:
+
+```sh
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:3000/api/public/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@empresa.com","password":"admin1234"}' \
+  | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).token))')
+
+# Alta de un empleado → 201
+curl -s -X POST http://localhost:3000/api/private/admin/users \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Ana Pérez","email":"ana@empresa.com","password":"inicial123"}'
+
+# Lista de usuarios → 200
+curl -s http://localhost:3000/api/private/admin/users -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Con el token de un empleado → 403 {"error":"Acceso denegado"}
+curl -s -i http://localhost:3000/api/private/admin/users -H "Authorization: Bearer $TOKEN"
 ```
 
 El servidor sigue una arquitectura por capas (dominio, aplicación e infraestructura) descrita en [implementación y seguridad](docs/primera-memoria/implementacion-y-seguridad.md).

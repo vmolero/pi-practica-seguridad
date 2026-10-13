@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentUser } from '../api/auth.js';
 import { SessionExpiredError } from '../api/http.js';
+import UserAdminPanel from './UserAdminPanel.jsx';
 
 const LOAD_ERROR = 'No se han podido cargar tus datos. Inténtalo de nuevo más tarde.';
 
@@ -79,6 +80,10 @@ export default function SessionView({ user, onLogout, onSessionExpired }) {
           Cerrar sesión
         </button>
       </section>
+
+      {currentUser.isAdmin && (
+        <UserAdminPanel currentEmail={currentUser.email} onSessionExpired={onSessionExpired} />
+      )}
     </>
   );
 }

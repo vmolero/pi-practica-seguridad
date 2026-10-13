@@ -113,10 +113,68 @@ cuando cierras la sesión tú mismo.
 
 ## Rol de gestor
 
-Funcionalidades
+Un gestor (administrador) inicia sesión igual que cualquier empleado. Además de
+su tarjeta de sesión, ve debajo el panel **Usuarios**, desde el que gestiona
+las cuentas de la aplicación. Los empleados no ven este panel.
 
-* Login con usuario y contraseña
-* Crear, modificar, eliminar empleados
+### Ver los usuarios
+
+La tabla muestra el nombre, el email y el rol (*Empleado* o *Administrador*)
+de cada usuario. Tu propia fila lleva la marca *(tú)*. En el móvil, cada
+usuario aparece como una tarjeta con los mismos datos.
+
+### Dar de alta un usuario
+
+1. En *Dar de alta un usuario*, escribe el **nombre**, el **email** y una
+   **contraseña inicial** de al menos 8 caracteres.
+2. Marca **Administrador** si la nueva cuenta debe poder gestionar usuarios.
+3. Pulsa **Dar de alta**.
+
+El usuario aparece en la tabla y el formulario se vacía. Comunícale su email y
+su contraseña inicial: con ellos ya puede iniciar sesión. El email se guarda
+en minúsculas, así que da igual cómo lo escribas.
+
+> **Provisional:** de momento la contraseña inicial la elige el gestor y se
+> guarda sin cifrar. Más adelante se sustituirá por una invitación en la que
+> cada empleado elige su propia contraseña.
+
+### Cambiar el nombre de un usuario
+
+1. Pulsa **Editar** en su fila.
+2. Escribe el nuevo nombre y pulsa **Guardar** (o Intro). **Cancelar** deja el
+   nombre como estaba.
+
+Solo se puede cambiar el nombre. El email, el rol y la contraseña no se pueden
+modificar desde el panel. Si cambias tu propio nombre, la tarjeta *Sesión
+activa* seguirá mostrando el anterior hasta que vuelvas a iniciar sesión.
+
+### Eliminar un usuario
+
+1. Pulsa **Eliminar** en su fila.
+2. La fila pregunta *¿Eliminar a …?*. Pulsa **Confirmar** para borrarlo o
+   **Cancelar** para dejarlo.
+
+La eliminación es definitiva: el usuario desaparece de la tabla y ya no puede
+iniciar sesión. No puedes eliminar tu propia cuenta (tu fila no tiene el botón
+*Eliminar*).
+
+### Mensajes de error
+
+Los mensajes aparecen en rojo encima de la tabla:
+
+| Mensaje | Causa |
+| --- | --- |
+| *Ya existe un usuario con ese email* | El email ya pertenece a otra cuenta. El formulario conserva el nombre y el email, pero tendrás que volver a escribir la contraseña. |
+| *Datos de usuario no válidos* | Algún campo no cumple las reglas: nombre de 1 a 100 caracteres, email válido o contraseña de 8 a 128 caracteres. |
+| *Usuario no encontrado* | Otro gestor ha eliminado ese usuario mientras tanto. |
+| *No tienes permiso para gestionar usuarios.* | Tu cuenta ya no es de administrador (por ejemplo, otro gestor la ha eliminado). El panel oculta los botones. |
+| *No se ha podido completar la operación. Inténtalo de nuevo.* | El servidor no responde o ha fallado. |
+
+Si tu sesión caduca mientras usas el panel, vuelves a la pantalla de login con
+el aviso de sesión caducada.
+
+### Pendiente
+
 * Asociar/Quitar tarjeta de empresa a empleados
 * Asociar/Revocar contrato a empleados para cada tarjeta.
 
