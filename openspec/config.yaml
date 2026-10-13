@@ -8,7 +8,9 @@ context: |
   gestionadas con las claves asimétricas de cada usuario, contramedidas (hash,
   sal, PBKDF, firma de claves públicas, integridad, doble factor, conocimiento
   cero) y, en fase 2, compartir datos cifrados entre usuarios.
-  Escribe todos los artefactos en español.
+  Toda la documentación se escribe en español: artefactos OpenSpec (proposal,
+  design, specs, tasks), README.md, la memoria (docs/) y cualquier otro
+  documento Markdown del proyecto.
   El software debe poder ejecutarse en Windows (además de Linux).
   Stack: Vite + React en JavaScript (sin TypeScript), Node.js + Express + Knex + SQLite.
   Reparto del trabajo: la CAPA DE SEGURIDAD (primitivas y protocolos criptográficos:
@@ -34,14 +36,17 @@ context: |
 
 rules:
   proposal:
+    - Redacta la propuesta en español
     - Enumera qué secciones de README.md y de la memoria interna (docs/primera-memoria/*.md, p. ej. implementacion-y-seguridad.md, manual-de-usuario.md) se verán afectadas por el cambio
   tasks:
+    - Redacta las tareas en español, también las de documentación
     - Incluye siempre tareas explícitas para actualizar README.md y la memoria interna (docs/primera-memoria/*.md) de modo que reflejen el cambio
 
 operations:
   apply:
     guidance:
       - No des el cambio por terminado sin haber actualizado README.md y la memoria interna (docs/primera-memoria/*.md) para que reflejen lo implementado
+      - Escribe en español toda la documentación que crees o actualices (README.md, docs/, comentarios de documentación)
   archive:
     guidance:
       - Antes de archivar, verifica que README.md y docs/primera-memoria/ reflejan el cambio; si no es así, actualízalos o avisa antes de archivar
