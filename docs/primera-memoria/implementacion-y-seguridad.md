@@ -40,15 +40,16 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │           └── UserAdminPanel.jsx # Panel de usuarios (solo administradores)
 └── server/                   # Backend: Node.js + Express + Knex + SQLite
     ├── index.js              # Arranque: construye las dependencias y escucha el puerto
-    ├── knexfile.cjs
-    ├── migrations/           # Migraciones de Knex (tabla USER)
-    ├── seeds/                # Usuarios de prueba para desarrollo
+    ├── knexfile.cjs          # Configuración de Knex; activa las claves foráneas
+    ├── migrations/           # Migraciones de Knex (USER, CARD, USER_CARD)
+    ├── seeds/                # Usuarios y tarjeta de prueba para desarrollo
     ├── test/                 # Tests con node:test
     └── src/
         ├── app.js            # createApp(): monta los routers y el manejo de errores
         ├── config.js         # loadConfig(): puerto, secreto y caducidad del token
         ├── domain/
         │   ├── user.js       # toPublicUser() y toAdminUser(): datos sin contraseña
+        │   ├── card.js       # toCard(): fila de CARD + USER_CARD con sus tipos
         │   └── session.js    # Claims del token ↔ usuario de la sesión
         ├── application/
         │   ├── auth-service.js  # Servicio de autenticación: login() → { token, user }
@@ -57,7 +58,8 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
         └── infrastructure/
             ├── database/
             │   ├── knex.js              # Conexión de Knex
-            │   └── user-repository.js   # findByEmail, findById, list, create, rename, remove
+            │   ├── user-repository.js   # findByEmail, findById, list, create, rename, remove
+            │   └── card-repository.js   # Tarjetas siempre a través de USER_CARD
             ├── security/
             │   ├── README.md            # Contrato del servicio de tokens (equipo/Claude)
             │   ├── issuer.js            # Valor del claim iss
@@ -451,10 +453,123 @@ navegador.
 - **El nombre del token puede quedar desactualizado.** Si un administrador
   cambia su propio nombre, `/me` devuelve el nombre antiguo hasta el siguiente
   login, porque sale de los claims.
-- **Borrado físico.** No hay desactivación ni histórico. Hoy no hay datos
-  asociados a un usuario, pero cuando existan tarjetas habrá que decidir qué
-  pasa con ellas.
+- **Borrado físico.** No hay desactivación ni histórico. Desde el paso 4, al
+  borrar un usuario se borran también las tarjetas de las que es propietario.
 - No hay registro de auditoría de quién creó o borró cada cuenta.
+
+## Tabla de tarjetas (paso 4)
+
+### Qué añade
+
+Las tablas en las que se guardan las tarjetas y su relación con los usuarios,
+y el repositorio que las maneja. Todavía no hay API ni interfaz: las añade el
+paso 5.
+
+### Modelo de datos
+
+```text
+USER (id, ...) 1 ──< USER_CARD (userId, cardId, isOwner, createdAt) >── 1 CARD (id, number, expiryMonth, expiryYear, cvv, createdAt, updatedAt)
+```
+
+| Tabla | Columna | Tipo | Notas |
+| --- | --- | --- | --- |
+| `CARD` | `id` | texto | Clave primaria. UUID v4 generado con `crypto.randomUUID()` |
+| `CARD` | `number` | texto | 13–19 dígitos. Texto para no perder ceros ni precisión. **En claro** |
+| `CARD` | `expiryMonth`, `expiryYear` | entero | Mes (1–12) y año de cuatro cifras |
+| `CARD` | `cvv` | texto | 3 o 4 dígitos. **En claro** |
+| `CARD` | `createdAt`, `updatedAt` | texto | ISO 8601 en UTC |
+| `USER_CARD` | `userId` | entero | Clave foránea a `USER.id`, `ON DELETE CASCADE` |
+| `USER_CARD` | `cardId` | texto | Clave foránea a `CARD.id`, `ON DELETE CASCADE` |
+| `USER_CARD` | `isOwner` | booleano | `true` solo para el propietario |
+| `USER_CARD` | `createdAt` | texto | ISO 8601 en UTC |
+
+La clave primaria de `USER_CARD` es `(userId, cardId)`, así que un usuario no
+puede estar relacionado dos veces con la misma tarjeta. `CARD` no tiene ninguna
+columna de propietario: la propiedad es un atributo de la relación.
+
+### Por qué N:N desde ya
+
+En la fase 1 una tarjeta pertenece a un único usuario, pero en la fase 2 los
+usuarios podrán compartir tarjetas. Con una tabla de unión desde el principio,
+compartir consiste en insertar filas con `isOwner = false`; si se hubiera
+puesto `CARD.ownerId`, habría que migrar las tarjetas reales y consultar dos
+sitios para saber qué tarjetas ve un usuario. El conjunto de tarjetas que ve
+un usuario `u` es siempre:
+
+```text
+Tarjetas(u) = { c ∈ CARD : ∃ r ∈ USER_CARD, r.userId = u ∧ r.cardId = c.id }
+```
+
+### Reglas de integridad
+
+1. **Un solo propietario por tarjeta**, garantizado por la base de datos con
+   un índice único parcial:
+
+   ```sql
+   CREATE UNIQUE INDEX user_card_one_owner ON USER_CARD (cardId) WHERE isOwner = 1;
+   ```
+
+   Es decir, `∀ c ∈ CARD : |{ r ∈ USER_CARD : r.cardId = c.id ∧ r.isOwner }| ≤ 1`.
+   Las filas con `isOwner = false` no están limitadas.
+2. **Un solo usuario por tarjeta en la fase 1**, garantizado por la aplicación
+   y no por el esquema: el repositorio crea la tarjeta y la relación del
+   propietario en una misma transacción y no ofrece ninguna operación para
+   relacionar una tarjeta existente con otro usuario. Un índice único sobre
+   `cardId` habría que quitarlo en la fase 2, y SQLite no permite borrar
+   restricciones sin recrear la tabla.
+3. **Integridad referencial.** SQLite ignora las claves foráneas salvo que se
+   active `PRAGMA foreign_keys = ON` en cada conexión; se hace en
+   `pool.afterCreate` de `knexfile.cjs`, de modo que lo heredan la aplicación,
+   las migraciones, los seeds y los tests. Cualquier migración futura que
+   recree `USER` o `CARD` tendrá que desactivarlas temporalmente.
+
+### Acceso a las tarjetas
+
+El repositorio (`card-repository.js`) nunca lee una tarjeta suelta: toda
+lectura parte de un usuario y pasa por `USER_CARD`, y una tarjeta no
+relacionada con él se trata igual que una inexistente. Las escrituras
+(`updateForOwner`, `removeForOwner`) exigen además ser el propietario, y lo
+comprueban dentro de la propia consulta:
+
+```sql
+UPDATE CARD SET ... WHERE id = ? AND id IN (SELECT cardId FROM USER_CARD WHERE userId = ? AND isOwner = 1)
+```
+
+Así la regla se cumple aunque la capa de aplicación olvide comprobarla, y no
+hay ventana entre la comprobación y la escritura.
+
+Al **eliminar un usuario** (panel del paso 3), `userRepository.remove` borra
+en una transacción las tarjetas de las que es propietario y después el
+usuario; la cascada elimina sus filas de `USER_CARD`. No quedan tarjetas sin
+propietario.
+
+### El CVV se guarda, ignorando PCI DSS
+
+La norma PCI DSS prohíbe almacenar el código de verificación de una tarjeta
+después de la autorización. Esta práctica lo guarda a propósito: es un
+ejercicio docente para practicar criptografía y seguridad, no un producto
+sujeto a cumplimiento normativo, y el objetivo de la aplicación es que el
+empleado tenga todos los datos de su tarjeta. En un producto real no sería
+admisible. En la fase 1 el CVV se cifrará en el navegador como el resto de
+campos, de modo que el servidor nunca lo vea en claro.
+
+### Lo que este paso no protege
+
+- **Número, caducidad y CVV se guardan en texto claro** (PROVISIONAL), igual
+  que la contraseña. Cualquiera con acceso al archivo `app.sqlite` los lee.
+- No hay cifrado ni integridad de los registros: una modificación directa de
+  la base de datos no se detecta.
+
+### Cómo evolucionará
+
+- **Fase 1.** Las columnas de datos de `CARD` se sustituyen por un sobre
+  cifrado con AES-GCM (`envelope`, `version`); la clave aleatoria de cada
+  tarjeta, envuelta con la clave pública de cada usuario, puede guardarse en
+  su fila de `USER_CARD`, una por relación.
+- **Fase 2.** Compartir una tarjeta es insertar una fila con
+  `isOwner = false` y la clave de la tarjeta envuelta para el nuevo usuario.
+  Queda por decidir qué pasa con las tarjetas compartidas cuando se elimina a
+  su propietario; hoy se borran.
 
 ## Trabajo futuro
 
@@ -477,3 +592,7 @@ navegador.
   acceso en cuanto se le borra.
 - Sustituir el alta con contraseña inicial por la invitación de la fase 1 y
   añadir la desactivación de cuentas y un registro de auditoría.
+- Exponer las tarjetas por la API y en la interfaz (paso 5).
+- Cifrar los datos de las tarjetas en el navegador (fase 1) y compartir
+  tarjetas entre usuarios (fase 2), decidiendo qué pasa con las tarjetas
+  compartidas de un propietario eliminado.

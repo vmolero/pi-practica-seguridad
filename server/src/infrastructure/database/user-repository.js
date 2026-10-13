@@ -1,3 +1,5 @@
+import { deleteCardsOwnedBy } from './card-repository.js';
+
 const ADMIN_COLUMNS = ['id', 'name', 'email', 'isAdmin'];
 
 /**
@@ -43,10 +45,15 @@ export function createUserRepository(knex) {
     },
 
     /**
-     * Borra el usuario. Devuelve true si existía.
+     * Borra el usuario y, en la misma transacción, las tarjetas de las que es
+     * propietario (la cascada elimina sus filas de USER_CARD). Devuelve true
+     * si existía.
      */
     async remove(id) {
-      return (await knex('USER').where({ id }).del()) > 0;
+      return knex.transaction(async (trx) => {
+        await deleteCardsOwnedBy(trx, id);
+        return (await trx('USER').where({ id }).del()) > 0;
+      });
     },
   };
 }

@@ -12,6 +12,13 @@ module.exports = {
       filename: join(dataDirectory, 'app.sqlite'),
     },
     useNullAsDefault: true,
+    pool: {
+      // SQLite ignora las claves foráneas salvo que se activen en cada conexión.
+      afterCreate(connection, done) {
+        connection.pragma('foreign_keys = ON');
+        done(null, connection);
+      },
+    },
     migrations: {
       directory: join(__dirname, 'migrations'),
       extension: 'cjs',

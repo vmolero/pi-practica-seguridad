@@ -7,8 +7,8 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 ## Estado actual
 
 - **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión. Los administradores ven además un panel para dar de alta, renombrar y eliminar usuarios.
-- **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), una sección de administración de usuarios solo para administradores (`/api/private/admin/users`), un endpoint de salud y un recurso de notas de demostración que el cliente ya no usa.
-- **Seguridad:** casi ninguna todavía, a propósito. La contraseña **viaja y se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Los pasos siguientes añadirán la criptografía.
+- **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), una sección de administración de usuarios solo para administradores (`/api/private/admin/users`) y un endpoint de salud. La base de datos ya tiene las tablas de tarjetas (`CARD` y la relación N:N `USER_CARD`, paso 4), aunque todavía no hay API ni interfaz para ellas (paso 5).
+- **Seguridad:** casi ninguna todavía, a propósito. La contraseña **viaja y se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), los datos de las tarjetas, incluido el CVV, **se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Los pasos siguientes añadirán la criptografía.
 - **Planificación:** el trabajo se divide en pasos pequeños propuestos como cambios de OpenSpec. Consulta la sección [Planificación](#planificación).
 
 ## Estructura
@@ -139,9 +139,22 @@ El servidor sigue una arquitectura por capas (dominio, aplicación e infraestruc
 
 La base de datos es el archivo `server/data/app.sqlite`, gestionado con Knex. El directorio `server/data/` se crea automáticamente cuando hace falta. El archivo de la base de datos está excluido de Git para no subir los datos locales.
 
-La tabla `USER` se administra mediante migraciones de Knex. El historial de migraciones también se guarda en esta base de datos, en las tablas `knex_migrations` y `knex_migrations_lock`.
+Las tablas `USER`, `CARD` y `USER_CARD` se administran mediante migraciones de Knex. El historial de migraciones también se guarda en esta base de datos, en las tablas `knex_migrations` y `knex_migrations_lock`.
 
 Iniciar el servidor no ejecuta automáticamente las migraciones pendientes; aplícalas con el comando `db:migrate`.
+
+Cada conexión activa las claves foráneas de SQLite (`PRAGMA foreign_keys = ON`, en `pool.afterCreate` de `server/knexfile.cjs`), que SQLite ignora por defecto.
+
+### Tablas de tarjetas
+
+Las tarjetas y los usuarios se relacionan como **N:N**, aunque en la fase 1 cada tarjeta tenga un único usuario, para que compartir tarjetas en la fase 2 consista en añadir filas y no en migrar datos:
+
+- `CARD`: `id` (UUID v4 generado en el servidor), `number` y `cvv` (texto, para conservar los ceros a la izquierda), `expiryMonth`, `expiryYear`, `createdAt` y `updatedAt` (ISO 8601 en UTC). No tiene ninguna columna de propietario.
+- `USER_CARD`: `userId`, `cardId`, `isOwner` y `createdAt`, con clave primaria `(userId, cardId)` y claves foráneas con borrado en cascada. El índice único parcial `user_card_one_owner` impide que una tarjeta tenga dos propietarios.
+
+El repositorio (`server/src/infrastructure/database/card-repository.js`) lee las tarjetas siempre a través de `USER_CARD`, solo deja modificarlas o borrarlas a su propietario y no tiene ninguna operación para dar acceso a otro usuario. Al eliminar un usuario se eliminan también las tarjetas de las que es propietario.
+
+**PROVISIONAL:** número, caducidad y CVV se guardan en texto claro; la fase 1 los sustituirá por un sobre cifrado en el navegador. Guardar el CVV incumple PCI DSS a sabiendas: es un ejercicio docente.
 
 ## Migraciones de base de datos
 
@@ -157,13 +170,13 @@ npm run db:migrate --workspace=server
 # Revierte el último lote de migraciones aplicado
 npm run db:rollback --workspace=server
 
-# Borra los usuarios y crea los usuarios de prueba
+# Borra usuarios y tarjetas y crea los datos de prueba
 npm run db:seed --workspace=server
 ```
 
 `db:make` crea un archivo CommonJS en `server/migrations/`. Define el cambio de esquema en `up` y su reversión en `down`. Knex registra cada migración aplicada y no la vuelve a ejecutar.
 
-La primera migración crea la tabla `USER` con `name`, `email` e `isAdmin` (booleano, `false` por defecto). La segunda añade la clave primaria `id`, la columna `password` (en texto claro en este paso) y hace único el `email`, que se guarda siempre en minúsculas. El seed está en `server/seeds/` y solo debe usarse en desarrollo. Para cambios posteriores, crea una migración nueva en vez de modificar una que ya se haya aplicado.
+La primera migración crea la tabla `USER` con `name`, `email` e `isAdmin` (booleano, `false` por defecto). La segunda añade la clave primaria `id`, la columna `password` (en texto claro en este paso) y hace único el `email`, que se guarda siempre en minúsculas. La tercera borra la antigua tabla `notes`, y la cuarta crea `CARD` y `USER_CARD`. El seed está en `server/seeds/`, solo debe usarse en desarrollo y crea, además de los usuarios de prueba, una tarjeta de prueba del empleado (número de test de Visa `4111 1111 1111 1111`, caducidad 12/2030, CVV `123`). Para cambios posteriores, crea una migración nueva en vez de modificar una que ya se haya aplicado.
 
 ## Planificación
 
@@ -172,6 +185,8 @@ El proyecto usa [OpenSpec](https://github.com/Fission-AI/OpenSpec) (instalado co
 - [`openspec/specs/autenticacion/`](openspec/specs/autenticacion/spec.md): especificación vigente del login.
 - [`openspec/changes/paso-2-middleware-jwt/`](openspec/changes/paso-2-middleware-jwt/): paso 2, sesión con JWT y middleware de autenticación. Está implementado salvo la firma asimétrica definitiva, que corresponde al equipo (ver [`server/src/infrastructure/security/README.md`](server/src/infrastructure/security/README.md)).
 - [`openspec/changes/archive/2026-10-13-paso-1-login-texto-claro/`](openspec/changes/archive/2026-10-13-paso-1-login-texto-claro/): paso 1, ya implementado y archivado. Login de extremo a extremo en texto claro, con la arquitectura por capas del servidor y la sección pública de la API. Es la base de los pasos siguientes.
+- [`openspec/changes/paso-4-tabla-tarjetas/`](openspec/changes/paso-4-tabla-tarjetas/): paso 4, tablas `CARD` y `USER_CARD` con relación N:N y su repositorio. Implementado.
+- [`openspec/changes/paso-5-dashboard-tarjetas/`](openspec/changes/paso-5-dashboard-tarjetas/): paso 5, API y dashboard para que cada usuario dé de alta, vea, modifique y elimine sus tarjetas. Propuesto.
 - [`openspec/changes/fase-1-registro-y-cifrado/`](openspec/changes/fase-1-registro-y-cifrado/): propuesta, diseño, especificaciones y tareas de la fase 1, con el registro por invitación, el login sin enviar la contraseña, el doble factor y la bóveda de tarjetas cifrada en el navegador. Cada tarea indica si la implementa el equipo (capa de seguridad) o Claude (resto del sistema).
 - [`docs/plan-backend-login.md`](docs/plan-backend-login.md): plan anterior del servidor de login, basado en el contrato `POST /api/login` con `{ "email", "password" }`.
 

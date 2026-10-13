@@ -14,7 +14,8 @@ export function createTestTokenService(options = {}) {
 
 /**
  * Arranca la aplicación completa sobre una base de datos temporal sembrada,
- * en un puerto aleatorio. Devuelve { baseUrl, close }.
+ * en un puerto aleatorio. Devuelve { baseUrl, knex, close }; `knex` permite
+ * comprobar o preparar datos directamente en la base de datos.
  */
 export async function startTestServer() {
   const database = await createTestDatabase();
@@ -28,6 +29,7 @@ export async function startTestServer() {
 
   return {
     baseUrl: `http://127.0.0.1:${server.address().port}`,
+    knex: database.knex,
     async close() {
       await new Promise((resolve) => server.close(resolve));
       await database.cleanup();
