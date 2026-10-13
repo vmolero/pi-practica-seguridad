@@ -109,7 +109,8 @@ La primera migración crea la tabla `USER` con `name`, `email` e `isAdmin` (bool
 
 El proyecto usa [OpenSpec](https://github.com/Fission-AI/OpenSpec) (instalado como dependencia de desarrollo) para proponer y seguir los cambios. Los comandos `/opsx:*` de Claude Code y las skills de `.claude/` trabajan sobre la carpeta `openspec/`.
 
-- [`openspec/changes/paso-1-login-texto-claro/`](openspec/changes/paso-1-login-texto-claro/): login de extremo a extremo en texto claro, con la arquitectura por capas del servidor y la sección pública de la API. Es la base de los pasos siguientes.
+- [`openspec/specs/autenticacion/`](openspec/specs/autenticacion/spec.md): especificación vigente del login.
+- [`openspec/changes/archive/2026-10-13-paso-1-login-texto-claro/`](openspec/changes/archive/2026-10-13-paso-1-login-texto-claro/): paso 1, ya implementado y archivado. Login de extremo a extremo en texto claro, con la arquitectura por capas del servidor y la sección pública de la API. Es la base de los pasos siguientes.
 - [`openspec/changes/fase-1-registro-y-cifrado/`](openspec/changes/fase-1-registro-y-cifrado/): propuesta, diseño, especificaciones y tareas de la fase 1, con el registro por invitación, el login sin enviar la contraseña, el doble factor y la bóveda de tarjetas cifrada en el navegador. Cada tarea indica si la implementa el equipo (capa de seguridad) o Claude (resto del sistema).
 - [`docs/plan-backend-login.md`](docs/plan-backend-login.md): plan anterior del servidor de login, basado en el contrato `POST /api/login` con `{ "email", "password" }`.
 
