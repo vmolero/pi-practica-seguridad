@@ -13,7 +13,7 @@ SHA3
 H(PASS) 256: 128 + 128 sacamos 2 contraseñas, una para cifrar la clave y la otra. Clave de datos y clave de login
 
 Hashes para proteger las contraseñas al almacenarlas
-PBKDF básico no estándard
+PBKDF básico no estándard (deshuso)
 scrypt, bcrypt o argon2
 
 Hay que almacenar la sal tb en la tabla, uno por cada usuario.
