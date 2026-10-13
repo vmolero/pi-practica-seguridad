@@ -33,8 +33,9 @@ autenticación".
   claves del servidor.
 - **Cliente**: `client/src/api/auth.js` guarda el token solo en memoria, lo
   añade a las peticiones privadas y lo descarta al cerrar sesión. La vista de
-  sesión llama a `GET /api/private/me`; si el servidor responde `401` (token
-  caducado o inválido) la interfaz vuelve al login con un aviso.
+  sesión llama a `GET /api/private/me` al mostrarse y cada vez que la ventana
+  recupera el foco; si el servidor responde `401` (token caducado o inválido)
+  la interfaz vuelve al login con un aviso.
 - **BREAKING**: cambia el cuerpo del `200` de `POST /api/public/login`. El
   único consumidor es el cliente de este repositorio, que se actualiza en el
   mismo cambio.
@@ -57,9 +58,8 @@ cambio en el hash de contraseñas o en el recurso `notes`.
 - `autenticacion`: el requisito "Endpoint público de login" cambia la
   respuesta `200` para incluir el token junto al usuario, y el requisito
   "Login desde la pantalla del cliente" pasa a guardar el token y a usarlo en
-  la vista de sesión. Esta capacidad la introduce el cambio
-  `paso-1-login-texto-claro`, todavía en curso y sin sincronizar a
-  `openspec/specs/`; este cambio debe aplicarse y archivarse después de aquel.
+  la vista de sesión. La especificación principal está en
+  `openspec/specs/autenticacion/spec.md` (paso 1, ya archivado).
 
 ## Impact
 

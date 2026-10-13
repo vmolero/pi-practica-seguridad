@@ -71,8 +71,9 @@ volver a escribirla.
 4. Si los datos son correctos, se muestra la pantalla de sesión iniciada:
    - el saludo **Hola de nuevo.** y el texto *Has iniciado sesión
      correctamente.*;
-   - el panel **Tu cuenta — Sesión activa**, con el email del usuario en la
-     fila **Usuario**;
+   - el panel **Tu cuenta — Sesión activa**, con el nombre del usuario en la
+     fila **Nombre** y su email en la fila **Usuario**. Estos datos los
+     devuelve el servidor tras comprobar la sesión;
    - el botón **Cerrar sesión**.
 
 En esta versión el servidor ya comprueba el email y la contraseña, pero
@@ -97,6 +98,18 @@ tendrás que introducir de nuevo tu email y tu contraseña.
 En esta versión la sesión solo existe mientras la página está abierta: si
 recargas la página o la cierras, la sesión se pierde y vuelve a aparecer la
 pantalla de login.
+
+## Sesión caducada
+
+Por seguridad, la sesión caduca pasado un tiempo (una hora, salvo que el
+administrador del servidor configure otro valor). La aplicación lo comprueba
+al iniciar sesión y cada vez que vuelves a su ventana. Si la sesión ha
+caducado, vuelves a la pantalla de login con el aviso:
+
+> *Tu sesión ha caducado. Vuelve a iniciar sesión.*
+
+Introduce de nuevo tu email y tu contraseña para seguir. Este aviso no aparece
+cuando cierras la sesión tú mismo.
 
 ## Rol de gestor
 

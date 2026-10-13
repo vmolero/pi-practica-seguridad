@@ -19,8 +19,9 @@ export function createPublicRouter({ authService }) {
     }
 
     try {
-      const user = await authService.login(credentials);
-      return response.json(user);
+      // { token, user }
+      const session = await authService.login(credentials);
+      return response.json(session);
     } catch (error) {
       if (error instanceof InvalidCredentialsError) {
         return response.status(401).json({ error: error.message });

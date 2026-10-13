@@ -258,9 +258,11 @@ client/src/
   respuesta es `401`, borra el token y lanza `SessionExpiredError` con el
   mensaje `Tu sesión ha caducado. Vuelve a iniciar sesión.`. `login()` no usa
   `apiFetch`: su `401` significa otra cosa.
-- `SessionView` llama a `getCurrentUser()` al montarse y muestra el `name`
+- `SessionView` llama a `getCurrentUser()` al montarse y cada vez que la
+  ventana recupera el foco (evento `focus` de `window`), y muestra el `name`
   devuelto por el servidor; así la pantalla demuestra que la sección privada
-  funciona. Ante `SessionExpiredError` avisa a `App` (`onSessionExpired`), que
+  funciona y una sesión caducada se detecta al volver a la pestaña sin añadir
+  botones. Ante `SessionExpiredError` avisa a `App` (`onSessionExpired`), que
   pone `user` a `null` y pasa el aviso a `LoginForm`.
 - `logout()` solo borra el token (no hay nada que cerrar en el servidor) y
   `App` vuelve al login sin aviso.
@@ -316,8 +318,7 @@ sesión, recarga, cierre de sesión y caducidad con `JWT_TTL_SECONDS=5`.
 
 ## Migration Plan
 
-1. Aplicar después de terminar y archivar `paso-1-login-texto-claro`
-   (este cambio modifica archivos que aquel todavía está creando).
+1. `paso-1-login-texto-claro` ya está archivado; este cambio parte de él.
 2. `npm install` (añade `jose` al workspace del servidor).
 3. Opcional: `JWT_SECRET` y `JWT_TTL_SECONDS` en el entorno (o en un `.env`
    si se adopta `--env-file`; no es necesario para desarrollar).

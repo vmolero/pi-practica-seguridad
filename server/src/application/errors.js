@@ -6,3 +6,12 @@ export class InvalidCredentialsError extends Error {
     this.name = 'InvalidCredentialsError';
   }
 }
+
+// Token de sesión ausente de forma, manipulado, firmado con otra clave, con un
+// algoritmo no admitido o caducado. No se distingue la causa.
+export class InvalidTokenError extends Error {
+  constructor(message = 'Token inválido') {
+    super(message);
+    this.name = 'InvalidTokenError';
+  }
+}

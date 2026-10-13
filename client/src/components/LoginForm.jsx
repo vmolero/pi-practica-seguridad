@@ -16,11 +16,13 @@ function validate({ email, password }) {
   return errors;
 }
 
-export default function LoginForm({ onSuccess }) {
+export default function LoginForm({ onSuccess, notice = '' }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
-  const [formError, setFormError] = useState('');
+  // Empieza con el aviso recibido (p. ej. sesión caducada); el siguiente
+  // intento de login lo sustituye.
+  const [formError, setFormError] = useState(notice);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event) {

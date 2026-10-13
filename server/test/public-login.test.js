@@ -1,30 +1,20 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { createApp } from '../src/app.js';
-import { createAuthService } from '../src/application/auth-service.js';
-import { createUserRepository } from '../src/infrastructure/database/user-repository.js';
-import { createTestDatabase } from './helpers.js';
+import { startTestServer } from './test-app.js';
 
 const INVALID_CREDENTIALS = { error: 'Credenciales inválidas' };
 const INVALID_REQUEST = { error: 'Petición de login no válida' };
 
 describe('POST /api/public/login', () => {
-  let database;
   let server;
   let loginUrl;
 
   before(async () => {
-    database = await createTestDatabase();
-    const authService = createAuthService({ userRepository: createUserRepository(database.knex) });
-    server = createApp({ authService }).listen(0);
-    await new Promise((resolve) => server.once('listening', resolve));
-    loginUrl = `http://127.0.0.1:${server.address().port}/api/public/login`;
+    server = await startTestServer();
+    loginUrl = `${server.baseUrl}/api/public/login`;
   });
 
-  after(async () => {
-    await new Promise((resolve) => server.close(resolve));
-    await database.cleanup();
-  });
+  after(() => server.close());
 
   function postJson(body) {
     return fetch(loginUrl, {
@@ -40,18 +30,30 @@ describe('POST /api/public/login', () => {
     assert.deepEqual(await response.json(), body);
   }
 
-  it('responde 200 con el empleado y sin contraseña', async () => {
-    await expectResponse(postJson({ email: 'empleado@empresa.com', password: 'demo1234' }), 200, {
-      email: 'empleado@empresa.com',
-      name: 'Empleado de prueba',
-      isAdmin: false,
-    });
+  it('responde 200 con el token y el empleado, sin contraseña', async () => {
+    const response = await postJson({ email: 'empleado@empresa.com', password: 'demo1234' });
+    assert.equal(response.status, 200);
+
+    const body = await response.json();
+    assert.deepEqual(Object.keys(body).sort(), ['token', 'user']);
+    assert.equal(body.token.split('.').length, 3);
+    assert.deepEqual(body.user, { email: 'empleado@empresa.com', name: 'Empleado de prueba', isAdmin: false });
   });
 
-  it('responde 200 con isAdmin true para un administrador', async () => {
+  it('emite un token con los claims de sesión y sin contraseña', async () => {
+    const response = await postJson({ email: 'empleado@empresa.com', password: 'demo1234' });
+    const { token } = await response.json();
+    const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+
+    assert.deepEqual(Object.keys(claims).sort(), ['email', 'exp', 'iat', 'isAdmin', 'iss', 'name', 'sub']);
+    assert.equal(claims.exp, claims.iat + 3600);
+    assert.equal(JSON.stringify(claims).includes('demo1234'), false);
+  });
+
+  it('responde 200 con user.isAdmin true para un administrador', async () => {
     const response = await postJson({ email: 'admin@empresa.com', password: 'admin1234' });
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).isAdmin, true);
+    assert.equal((await response.json()).user.isAdmin, true);
   });
 
   it('no distingue mayúsculas ni espacios en el email', async () => {

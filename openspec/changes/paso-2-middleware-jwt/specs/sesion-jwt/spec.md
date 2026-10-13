@@ -153,8 +153,12 @@ token y volver a la pantalla de login mostrando
 - **WHEN** el usuario inicia sesión correctamente
 - **THEN** la vista de sesión muestra el nombre y el email devueltos por `GET /api/private/me`
 
+#### Scenario: Comprobación al volver a la ventana
+- **WHEN** la ventana de la aplicación recupera el foco con la sesión iniciada
+- **THEN** el cliente vuelve a llamar a `GET /api/private/me` con el token
+
 #### Scenario: Token caducado durante la sesión
-- **WHEN** el token caduca y el cliente hace una petición privada
+- **WHEN** el token caduca y el cliente hace una petición privada (por ejemplo, al volver a la ventana)
 - **THEN** la interfaz vuelve a la pantalla de login y muestra `Tu sesión ha caducado. Vuelve a iniciar sesión.`
 
 #### Scenario: Recarga de la página

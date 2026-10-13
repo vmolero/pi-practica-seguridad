@@ -1,13 +1,5 @@
 # Spec Delta
 
-## Purpose
-
-Ajusta la capacidad `autenticacion` que introduce `paso-1-login-texto-claro`:
-el login, además de validar las credenciales, emite el token de sesión que
-describe `sesion-jwt`, y la pantalla del cliente lo guarda para usarlo en la
-sección privada de la API. Los requisitos no mencionados aquí (error genérico
-ante credenciales incorrectas, validación de la petición) no cambian.
-
 ## MODIFIED Requirements
 
 ### Requirement: Endpoint público de login

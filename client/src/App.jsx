@@ -1,16 +1,31 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { logout } from './api/auth.js';
 import LoginForm from './components/LoginForm.jsx';
 import SessionView from './components/SessionView.jsx';
 
 export default function App() {
-  // Solo se guarda el email del usuario en memoria; nunca la contraseña.
+  // El usuario solo se guarda en memoria, nunca la contraseña. El token de
+  // sesión vive aparte, en api/session.js.
   const [user, setUser] = useState(null);
+  // Aviso para la pantalla de login, p. ej. cuando la sesión ha caducado.
+  const [notice, setNotice] = useState('');
+
+  function handleLogin(loggedUser) {
+    setNotice('');
+    setUser(loggedUser);
+  }
 
   async function handleLogout() {
     await logout();
+    setNotice('');
     setUser(null);
   }
+
+  // Estable entre renders: SessionView lo usa como dependencia de su efecto.
+  const handleSessionExpired = useCallback((message) => {
+    setNotice(message);
+    setUser(null);
+  }, []);
 
   return (
     <main className="layout">
@@ -25,9 +40,13 @@ export default function App() {
       </header>
 
       {user ? (
-        <SessionView email={user.email} onLogout={handleLogout} />
+        <SessionView
+          user={user}
+          onLogout={handleLogout}
+          onSessionExpired={handleSessionExpired}
+        />
       ) : (
-        <LoginForm onSuccess={setUser} />
+        <LoginForm onSuccess={handleLogin} notice={notice} />
       )}
 
       <footer className="footer">
