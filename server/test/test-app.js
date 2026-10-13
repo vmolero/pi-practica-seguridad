@@ -1,6 +1,8 @@
 import { createApp } from '../src/app.js';
 import { createAuthService } from '../src/application/auth-service.js';
+import { createCardService } from '../src/application/card-service.js';
 import { createUserAdminService } from '../src/application/user-admin-service.js';
+import { createCardRepository } from '../src/infrastructure/database/card-repository.js';
 import { createUserRepository } from '../src/infrastructure/database/user-repository.js';
 import { TOKEN_ISSUER } from '../src/infrastructure/security/issuer.js';
 import { createTokenService } from '../src/infrastructure/security/token-service.js';
@@ -23,8 +25,9 @@ export async function startTestServer() {
   const userRepository = createUserRepository(database.knex);
   const authService = createAuthService({ userRepository, tokenService });
   const userAdminService = createUserAdminService({ userRepository });
+  const cardService = createCardService({ cardRepository: createCardRepository(database.knex) });
 
-  const server = createApp({ authService, tokenService, userAdminService, userRepository }).listen(0);
+  const server = createApp({ authService, tokenService, userAdminService, userRepository, cardService }).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
 
   return {

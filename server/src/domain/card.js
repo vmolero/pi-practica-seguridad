@@ -18,3 +18,18 @@ export function toCard(row) {
     updatedAt: row.updatedAt,
   };
 }
+
+/**
+ * Datos de una tarjeta que se envían al cliente: el número enmascarado (solo
+ * los 4 últimos dígitos) y la caducidad. Nunca incluye el número completo ni
+ * el CVV.
+ */
+export function toMaskedCard(card) {
+  return {
+    id: card.id,
+    last4: card.number.slice(-4),
+    expiryMonth: card.expiryMonth,
+    expiryYear: card.expiryYear,
+    createdAt: card.createdAt,
+  };
+}

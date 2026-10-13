@@ -74,20 +74,23 @@ volver a escribirla.
    - el panel **Tu cuenta — Sesión activa**, con el nombre del usuario en la
      fila **Nombre** y su email en la fila **Usuario**. Estos datos los
      devuelve el servidor tras comprobar la sesión;
-   - el botón **Cerrar sesión**.
+   - el botón **Cerrar sesión**;
+   - debajo, el panel **Tu cartera — Mis tarjetas** (ver
+     [Rol de empleado](#rol-de-empleado)), que tienen todos los usuarios;
+   - si eres gestor, además, el panel **Usuarios** (ver
+     [Rol de gestor](#rol-de-gestor)).
 
-En esta versión el servidor ya comprueba el email y la contraseña, pero
-todavía no hay ninguna funcionalidad de gestor ni de empleado tras iniciar
-sesión. En desarrollo existen estos usuarios de prueba:
+En desarrollo existen estos usuarios de prueba:
 
 | Email                  | Contraseña  | Rol           |
 |------------------------|-------------|---------------|
 | `empleado@empresa.com` | `demo1234`  | Empleado      |
 | `admin@empresa.com`    | `admin1234` | Administrador |
 
-Estos usuarios solo existen en la base de datos de desarrollo. **Aviso:** en
-esta versión la contraseña se envía y se guarda sin cifrar; no uses una
-contraseña real.
+Estos usuarios solo existen en la base de datos de desarrollo. El empleado de
+prueba tiene ya una tarjeta de prueba (`•••• 1111`, caducidad 12/30).
+**Aviso:** en esta versión la contraseña y los datos de las tarjetas se envían
+y se guardan sin cifrar; no uses una contraseña ni una tarjeta reales.
 
 ## Cerrar sesión
 
@@ -113,9 +116,12 @@ cuando cierras la sesión tú mismo.
 
 ## Rol de gestor
 
-Un gestor (administrador) inicia sesión igual que cualquier empleado. Además de
-su tarjeta de sesión, ve debajo el panel **Usuarios**, desde el que gestiona
-las cuentas de la aplicación. Los empleados no ven este panel.
+Un gestor (administrador) inicia sesión igual que cualquier empleado y tiene
+también su propio panel **Mis tarjetas**, que funciona igual que el de un
+empleado (ver [Rol de empleado](#rol-de-empleado)). Ser gestor **no** permite
+ver ni cambiar las tarjetas de los empleados. Debajo ve además el panel
+**Usuarios**, desde el que gestiona las cuentas de la aplicación. Los
+empleados no ven este panel.
 
 ### Ver los usuarios
 
@@ -180,8 +186,73 @@ el aviso de sesión caducada.
 
 ## Rol de empleado
 
-* Login con usuario y contraseña
-* Añadir su tarjeta propia
+Tras iniciar sesión, cualquier usuario ve el panel **Tu cartera — Mis
+tarjetas**, donde guarda y gestiona sus tarjetas. Nadie más puede verlas, ni
+siquiera un gestor.
+
+### Ver tus tarjetas
+
+Cada tarjeta aparece con el número **enmascarado**, del que solo se ven los
+cuatro últimos dígitos (por ejemplo, `•••• 1111`), y su caducidad en la forma
+*Caduca MM/AA*. El número completo y el CVV no se vuelven a mostrar nunca
+después de guardarlos. Si todavía no tienes ninguna, el panel indica
+*Todavía no has guardado ninguna tarjeta.*
+
+### Añadir una tarjeta
+
+1. En *Añadir una tarjeta*, escribe el **número de tarjeta** (puedes separar
+   los dígitos con espacios o guiones), la **caducidad** (mes y año de cuatro
+   cifras) y el **CVV** (el texto se oculta mientras se escribe).
+2. Pulsa **Guardar tarjeta**.
+
+La tarjeta aparece en la lista y el formulario se vacía. El navegador puede
+ofrecerte autocompletar los datos de tus tarjetas guardadas.
+
+### Modificar una tarjeta
+
+1. Pulsa **Editar** en la tarjeta. Se abre un formulario con la caducidad
+   rellenada y el número y el CVV vacíos.
+2. Cambia solo lo que quieras corregir. **Deja vacío** el número o el CVV si
+   no quieres cambiarlos.
+3. Pulsa **Guardar**. **Cancelar** deja la tarjeta como estaba.
+
+### Eliminar una tarjeta
+
+1. Pulsa **Eliminar** en la tarjeta.
+2. La fila pregunta *¿Eliminar la tarjeta •••• 1234?*. Pulsa **Confirmar**
+   para borrarla o **Cancelar** para dejarla.
+
+La eliminación es definitiva.
+
+### Mensajes de error
+
+Antes de enviar nada, la aplicación comprueba los datos y muestra el mensaje
+debajo del campo que falla:
+
+| Situación | Mensaje |
+| --- | --- |
+| El número no tiene de 13 a 19 dígitos o no es un número de tarjeta válido (no supera la comprobación de Luhn) | *El número de tarjeta no es válido.* |
+| El mes no está entre 1 y 12, el año no tiene cuatro cifras o está a más de 20 años | *La fecha de caducidad no es válida.* |
+| La tarjeta caducó antes del mes actual (una tarjeta vale hasta el último día de su mes) | *La tarjeta está caducada.* |
+| Al editar, se ha rellenado el mes sin el año o al revés | *Indica el mes y el año de caducidad.* |
+| El CVV no tiene 3 o 4 dígitos | *El CVV debe tener 3 o 4 dígitos.* |
+| Al editar, no se ha cambiado nada | *No has cambiado ningún dato.* |
+
+Los errores que devuelve el servidor aparecen en rojo encima de la lista:
+
+| Mensaje | Causa |
+| --- | --- |
+| *Datos de tarjeta no válidos* | El servidor ha rechazado los datos. El formulario conserva el número y la caducidad, pero tendrás que volver a escribir el CVV. |
+| *Tarjeta no encontrada* | La tarjeta se ha eliminado mientras tanto (por ejemplo, desde otra ventana). Desaparece de la lista. |
+| *No se ha podido completar la operación. Inténtalo de nuevo.* | El servidor no responde o ha fallado. |
+
+Si tu sesión caduca mientras usas el panel, vuelves a la pantalla de login con
+el aviso de sesión caducada.
+
+> **Provisional:** en esta versión los datos de las tarjetas, incluido el CVV,
+> se envían y se guardan sin cifrar. La fase 1 los cifrará en el navegador.
+
+### Pendiente
+
 * Descargar contrato de tarjeta de empresa (si tiene alguna asociada)
-* Compartir tarjeta con otro empleado (tiene sentido?)
-* Cerrar sesión
+* Compartir tarjeta con otro empleado (fase 2)

@@ -39,3 +39,20 @@ export class SelfDeletionError extends Error {
     this.name = 'SelfDeletionError';
   }
 }
+
+// La tarjeta no existe, su identificador no tiene formato válido o no está
+// relacionada con el usuario: no se distingue entre los tres casos.
+export class CardNotFoundError extends Error {
+  constructor() {
+    super('Tarjeta no encontrada');
+    this.name = 'CardNotFoundError';
+  }
+}
+
+// El usuario ve la tarjeta pero no es su propietario (tarjeta compartida, fase 2).
+export class CardForbiddenError extends Error {
+  constructor() {
+    super('Acceso denegado');
+    this.name = 'CardForbiddenError';
+  }
+}

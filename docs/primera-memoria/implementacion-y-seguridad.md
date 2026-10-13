@@ -32,9 +32,13 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │       ├── api/
 │       │   ├── admin-users.js # listUsers(), createUser(), renameUser(), deleteUser()
 │       │   ├── auth.js       # login(), getCurrentUser() y logout()
+│       │   ├── cards.js      # listCards(), createCard(), updateCard(), deleteCard()
 │       │   ├── http.js       # apiFetch(): añade el token; 401 → sesión caducada
 │       │   └── session.js    # Token de sesión, solo en memoria
+│       ├── validation/
+│       │   └── card.js       # validateCardForm(): mismas reglas que el servidor
 │       └── components/
+│           ├── CardDashboard.jsx # Mis tarjetas: lista, alta, edición y borrado
 │           ├── LoginForm.jsx    # Formulario de email y contraseña
 │           ├── SessionView.jsx  # Vista de sesión: datos de /api/private/me
 │           └── UserAdminPanel.jsx # Panel de usuarios (solo administradores)
@@ -49,11 +53,12 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
         ├── config.js         # loadConfig(): puerto, secreto y caducidad del token
         ├── domain/
         │   ├── user.js       # toPublicUser() y toAdminUser(): datos sin contraseña
-        │   ├── card.js       # toCard(): fila de CARD + USER_CARD con sus tipos
+        │   ├── card.js       # toCard() y toMaskedCard(): sin número completo ni CVV
         │   └── session.js    # Claims del token ↔ usuario de la sesión
         ├── application/
         │   ├── auth-service.js  # Servicio de autenticación: login() → { token, user }
         │   ├── user-admin-service.js # Alta, lista, cambio de nombre y borrado de usuarios
+        │   ├── card-service.js  # Tarjetas propias: acceso por relación y propiedad
         │   └── errors.js        # Errores de aplicación (credenciales, token, usuarios)
         └── infrastructure/
             ├── database/
@@ -70,6 +75,8 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
                 ├── auth-middleware.js   # Middleware de autenticación
                 ├── require-admin.js     # Middleware de rol: solo administradores
                 ├── admin-router.js      # /api/private/admin (usuarios)
+                ├── cards-router.js      # /api/private/cards (tarjetas propias)
+                ├── card-request.js      # Validación de tarjetas (Luhn, caducidad, CVV)
                 ├── user-request.js      # Validación de las peticiones de usuarios
                 └── login-request.js     # Validación de la petición de login
 ```
@@ -95,7 +102,10 @@ peticiones a `/api` al servidor, así que el navegador solo habla con un origen.
   foco, y muestra su nombre y su email junto al botón **Cerrar sesión**. Si el
   servidor rechaza el token, avisa a `App`, que vuelve al login con el mensaje
   de sesión caducada. Al aparecer, mueve el foco al título para que los
-  lectores de pantalla anuncien el cambio.
+  lectores de pantalla anuncien el cambio. Debajo monta `CardDashboard` para
+  todos los usuarios y, si es administrador, `UserAdminPanel`.
+- **`CardDashboard.jsx`** lista, da de alta, modifica y elimina las tarjetas
+  del usuario (ver [Dashboard de tarjetas](#dashboard-de-tarjetas-paso-5)).
 
 ### Capa de autenticación (`client/src/api/auth.js`)
 
@@ -462,8 +472,7 @@ navegador.
 ### Qué añade
 
 Las tablas en las que se guardan las tarjetas y su relación con los usuarios,
-y el repositorio que las maneja. Todavía no hay API ni interfaz: las añade el
-paso 5.
+y el repositorio que las maneja. La API y la interfaz las añade el paso 5.
 
 ### Modelo de datos
 
@@ -571,6 +580,100 @@ campos, de modo que el servidor nunca lo vea en claro.
   Queda por decidir qué pasa con las tarjetas compartidas cuando se elimina a
   su propietario; hoy se borran.
 
+## Dashboard de tarjetas (paso 5)
+
+### Qué añade
+
+La API `/api/private/cards` y el dashboard **Mis tarjetas** del cliente, con
+los que cada usuario da de alta, lista, modifica y elimina **sus** tarjetas.
+
+| Método y ruta | Cuerpo | Respuestas |
+| --- | --- | --- |
+| `GET /api/private/cards` | — | `200 { cards: [ { id, last4, expiryMonth, expiryYear, createdAt } ] }` |
+| `POST /api/private/cards` | `{ number, expiryMonth, expiryYear, cvv }` | `201` tarjeta enmascarada · `400` |
+| `PATCH /api/private/cards/:id` | subconjunto no vacío de los cuatro campos | `200` tarjeta enmascarada · `400` · `403` · `404` |
+| `DELETE /api/private/cards/:id` | — | `204` · `403` · `404` |
+
+### Control de acceso por relación y por propiedad
+
+El usuario sale siempre del token (`u = c.sub`), nunca del cuerpo ni de la
+URL; un campo `userId` en el cuerpo es un error de validación. Las tarjetas
+visibles son las del paso 4:
+
+```text
+Tarjetas(u) = { c ∈ CARD : ∃ r ∈ USER_CARD, r.userId = u ∧ r.cardId = c.id }
+```
+
+Leer exige `c ∈ Tarjetas(u)`; modificar o borrar exige además la propiedad:
+
+```text
+Modificar(u, c)  ⇔  ∃ r ∈ USER_CARD : r.userId = u ∧ r.cardId = c ∧ r.isOwner
+```
+
+`cardService` aplica para `PATCH` y `DELETE`:
+
+1. El router comprueba que `:id` es un UUID; si no → `404`.
+2. `r ← findForUser(id, u)`. Si no hay relación → `404 { "error": "Tarjeta no encontrada" }`.
+3. Si `¬ r.isOwner` → `403 { "error": "Acceso denegado" }`, sin escribir.
+4. `updateForOwner` / `removeForOwner`, que repiten el filtro por propietario
+   en la propia consulta SQL (paso 4). Si no encuentran fila, la tarjeta se
+   ha borrado entre medias → `404`.
+
+Una tarjeta ajena, una inexistente y un identificador mal formado dan la misma
+respuesta, para no revelar qué identificadores existen. Ser administrador no
+amplía `Tarjetas(u)`: el rol solo cuenta en `/api/private/admin`. En la fase 1
+toda relación es de propiedad, así que el `403` solo aparece con una relación
+compartida (fase 2); los tests lo comprueban insertando esa relación a mano.
+
+### Validación
+
+`card-request.js` comprueba cada cuerpo y responde siempre
+`400 { "error": "Datos de tarjeta no válidos" }`, sin indicar qué campo ha
+fallado (el detalle por campo lo da el cliente):
+
+- `number`: texto; sin espacios ni guiones debe tener de 13 a 19 dígitos y
+  superar la comprobación de Luhn: duplicando cada segundo dígito desde la
+  derecha (restando 9 si pasa de 9), la suma de todos los dígitos es múltiplo
+  de 10. Luhn no es una medida de seguridad: solo detecta errores de tecleo.
+- `expiryMonth ∈ [1, 12]` y `expiryYear` entero con
+  `año(hoy) ≤ expiryYear ≤ año(hoy) + 20`.
+- Caducidad: válida si `(expiryYear, expiryMonth) ≥ (año(hoy), mes(hoy))` en
+  orden lexicográfico, porque una tarjeta vale hasta el último día de su mes.
+- `cvv`: 3 o 4 dígitos (las Amex usan 4).
+- En el alta, los cuatro campos son obligatorios; en la modificación, al menos
+  uno, y el mes y el año siempre juntos. Cualquier otro campo se rechaza.
+
+El cliente (`client/src/validation/card.js`) aplica las mismas reglas para
+mostrar el error junto al campo sin enviar la petición. Las dos
+implementaciones se prueban con la misma tabla de números de prueba.
+
+### Minimización: lo que nunca sale del servidor
+
+Todo lo que devuelve `cardService` pasa por `toMaskedCard`, que solo conserva
+`id`, `last4` (los 4 últimos dígitos), la caducidad y la fecha de alta. El
+número completo y el CVV entran por la API pero no vuelven a salir. Por eso
+la modificación es **parcial** (`PATCH`): el formulario de edición rellena la
+caducidad y deja el número y el CVV vacíos ("vacío = no cambiar"), y el
+cliente envía solo los campos modificados. Con un `PUT` que sustituyese los
+cuatro campos habría que volver a teclearlo todo o devolver los datos al
+cliente.
+
+En el cliente, los datos solo viven en el estado de React: no se escriben en
+la consola ni en `localStorage`/`sessionStorage`, el CVV usa un campo de tipo
+contraseña y se borra del estado tras cada envío.
+
+### Lo que este paso no protege
+
+- **Número, caducidad y CVV viajan y se guardan en texto claro**
+  (PROVISIONAL). Sin HTTPS, cualquiera que observe la red los ve; con acceso a
+  `app.sqlite`, también.
+- **Se guarda el CVV**, ignorando PCI DSS (ver el paso 4).
+- **Borrado físico**: una tarjeta eliminada no se puede recuperar.
+- La fase 1 cambiará el modelo: el cliente cifrará la tarjeta completa antes
+  de enviarla y el servidor no podrá enmascararla ni aplicar cambios
+  parciales; descifrar, modificar y volver a cifrar con una clave nueva lo
+  hará el navegador.
+
 ## Trabajo futuro
 
 - Sustituir la firma provisional del token por la firma asimétrica del
@@ -592,7 +695,6 @@ campos, de modo que el servidor nunca lo vea en claro.
   acceso en cuanto se le borra.
 - Sustituir el alta con contraseña inicial por la invitación de la fase 1 y
   añadir la desactivación de cuentas y un registro de auditoría.
-- Exponer las tarjetas por la API y en la interfaz (paso 5).
 - Cifrar los datos de las tarjetas en el navegador (fase 1) y compartir
   tarjetas entre usuarios (fase 2), decidiendo qué pasa con las tarjetas
   compartidas de un propietario eliminado.

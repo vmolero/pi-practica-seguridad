@@ -431,6 +431,99 @@ h3 {
   white-space: nowrap;
 }
 
+/* Dashboard de tarjetas */
+
+.card-panel {
+  width: 100%;
+  margin-top: 28px;
+}
+
+.card-panel > .form-alert {
+  margin-top: 16px;
+}
+
+.card-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.card-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-number {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
+.card-expiry,
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.card-edit-form {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 420px;
+}
+
+.card-edit-form .row-actions {
+  justify-content: flex-start;
+}
+
+.expiry-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.expiry-field legend {
+  margin-bottom: 7px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.expiry-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.expiry-inputs input:first-of-type {
+  width: 4.5em;
+}
+
+.expiry-inputs input:last-of-type {
+  width: 6em;
+}
+
+.cvv-field input {
+  width: 6em;
+}
+
 @keyframes reveal {
   from {
     opacity: 0;
