@@ -21,4 +21,33 @@ Tb con pimienta. Vector aleatorio, el mismo para todos los usuarios
 
 3. Validación mediante middleware estructurado (de autenticación).
 
-4. ¿Se ha forzado para que sea conocimeinto 0?
+4. ¿Se ha forzado para que sea conocimiento 0?
+
+
+ENtrega memoria
+Memoria corta y estructurada: índice + manual de usuario (nivel de usuario) Cómo se instala y como se usa la herramienta
+
+Doc sobre implementación
+---
+Arquitectura y stack tecnologico
+Las funciones más imp desde el pto de vista criptográfico, documentarlo aquí
+Capitulo especifico sobre seguridad donde, de forma formal se documenta la criptografía utilizada. GLosario de variables según visto en teoría.
+
+Objetivo: que quede claro como se hace el cifrado (usando not matematica)
+Generación de claves y protección de claves. Cifrado del canal.
+
+Propuestas de mejora. (es para la memoria final)
+Video: seguimiento del manual de usuario. Cuestiones de seguridad sí mencionar o mostrar en código.
+
+
+Cliente:
+
+Login
+---
+Contraseña -> padding hasta 256 bits -> usar 128 para datos , 128 para clave
+
+Datos
+----
+El json (payload) se envia en texto claro con los valores de cada clave cifrados
+Cifrados usando SHA los datos
+Cifrados usando SHA la clave
