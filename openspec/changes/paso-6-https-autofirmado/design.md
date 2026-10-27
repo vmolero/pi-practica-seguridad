@@ -204,10 +204,11 @@ anularía el objetivo del paso.
 
 ## Open Questions
 
-- ¿RSA 2048, RSA 3072 o ECDSA P-256? (lo decide el equipo; la propuesta es
-  RSA 2048).
-- ¿Se quiere, además, **autenticación mutua TLS**? El proxy de Vite
-  presentaría el certificado del cliente al servidor (`target.cert` y
-  `target.key`), y el servidor exigiría `requestCert` con ese certificado
-  como `ca`. Solo protege el tramo Vite ↔ API en desarrollo, así que de
-  momento queda fuera de alcance.
+Resueltas por el equipo:
+
+- **Algoritmo y parámetros:** se mantienen los actuales (RSA 2048, SHA-256,
+  365 días).
+- **Autenticación mutua TLS:** se deja de lado por el momento. Si se retoma,
+  el proxy de Vite presentaría el certificado del cliente al servidor
+  (`target.cert` y `target.key`), y el servidor exigiría `requestCert` con ese
+  certificado como `ca`, en un cambio aparte.

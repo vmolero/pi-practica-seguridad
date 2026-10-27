@@ -10,6 +10,10 @@ seguridad se aplican en cada parte. El trabajo avanza en pasos pequeños:
   **provisional** (HMAC con un secreto compartido).
 - **Paso 3:** panel de administración de usuarios (alta, cambio de nombre y
   eliminación) y primer control de acceso por rol en el servidor.
+- **Pasos 4 y 5:** tabla de tarjetas y dashboard **Mis tarjetas**, todavía con
+  los datos en texto claro.
+- **Paso 6:** cifrado del canal. Cliente y servidor solo atienden por HTTPS,
+  cada uno con su propio certificado autofirmado generado con OpenSSL.
 
 Es la base sobre la que los pasos siguientes añadirán la criptografía; no es el
 diseño final.
@@ -21,10 +25,13 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 
 ```text
 .
-├── package.json              # Define los workspaces y los scripts comunes (dev, build...)
+├── package.json              # Define los workspaces y los scripts comunes (dev, build, cert...)
+├── scripts/
+│   └── generar-certificados.mjs # npm run cert: certificados autofirmados con OpenSSL
 ├── client/                   # Frontend: Vite + React (JavaScript)
+│   ├── certs/                # Certificado y clave del cliente (no se versiona)
 │   ├── index.html            # Página única; monta la aplicación en #root
-│   ├── vite.config.js        # Plugin de React y proxy de /api hacia el servidor
+│   ├── vite.config.js        # HTTPS, plugin de React y proxy de /api que verifica al servidor
 │   └── src/
 │       ├── main.jsx          # Punto de entrada: renderiza <App />
 │       ├── App.jsx           # Decide si mostrar el login o la sesión iniciada
@@ -43,14 +50,15 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │           ├── SessionView.jsx  # Vista de sesión: datos de /api/private/me
 │           └── UserAdminPanel.jsx # Panel de usuarios (solo administradores)
 └── server/                   # Backend: Node.js + Express + Knex + SQLite
-    ├── index.js              # Arranque: construye las dependencias y escucha el puerto
+    ├── certs/                # Certificado y clave del servidor (no se versiona)
+    ├── index.js              # Arranque: construye las dependencias y escucha por HTTPS
     ├── knexfile.cjs          # Configuración de Knex; activa las claves foráneas
     ├── migrations/           # Migraciones de Knex (USER, CARD, USER_CARD)
     ├── seeds/                # Usuarios y tarjeta de prueba para desarrollo
     ├── test/                 # Tests con node:test
     └── src/
         ├── app.js            # createApp(): monta los routers y el manejo de errores
-        ├── config.js         # loadConfig(): puerto, secreto y caducidad del token
+        ├── config.js         # loadConfig(): puerto, token y rutas del certificado TLS
         ├── domain/
         │   ├── user.js       # toPublicUser() y toAdminUser(): datos sin contraseña
         │   ├── card.js       # toCard() y toMaskedCard(): sin número completo ni CVV
@@ -70,6 +78,7 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
             │   ├── issuer.js            # Valor del claim iss
             │   └── token-service.js     # PROVISIONAL: firma y verificación HS256
             └── http/
+                ├── https-server.js      # createHttpsServer(): solo HTTPS, sin certificado no arranca
                 ├── public-router.js     # /api/public (sin sesión)
                 ├── private-router.js    # /api/private (con sesión)
                 ├── auth-middleware.js   # Middleware de autenticación
@@ -82,8 +91,9 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 ```
 
 `npm run dev` en la raíz arranca a la vez el cliente (Vite, puerto 5173) y el
-servidor (Express, puerto 3000). En desarrollo, el proxy de Vite reenvía las
-peticiones a `/api` al servidor, así que el navegador solo habla con un origen.
+servidor (Express, puerto 3000), los dos por HTTPS. En desarrollo, el proxy de
+Vite reenvía las peticiones a `/api` al servidor, así que el navegador solo
+habla con un origen.
 
 ## Vista de login
 
@@ -234,6 +244,7 @@ administrador de prueba para desarrollo.
 Este paso deja a propósito sin resolver todos los riesgos siguientes:
 
 - La contraseña viaja en claro por HTTP: cualquiera que observe la red la ve.
+  *(Resuelto en el paso 6: el canal va cifrado con TLS.)*
 - La contraseña se guarda en claro: quien lea la base de datos obtiene todas.
 - La comparación con `===` no es de tiempo constante.
 - No hay límite de intentos de login.
@@ -664,9 +675,9 @@ contraseña y se borra del estado tras cada envío.
 
 ### Lo que este paso no protege
 
-- **Número, caducidad y CVV viajan y se guardan en texto claro**
-  (PROVISIONAL). Sin HTTPS, cualquiera que observe la red los ve; con acceso a
-  `app.sqlite`, también.
+- **Número, caducidad y CVV se guardan en texto claro** (PROVISIONAL): con
+  acceso a `app.sqlite` se ven. Desde el paso 6 ya no viajan en claro por la
+  red, pero el servidor los recibe y los ve.
 - **Se guarda el CVV**, ignorando PCI DSS (ver el paso 4).
 - **Borrado físico**: una tarjeta eliminada no se puede recuperar.
 - La fase 1 cambiará el modelo: el cliente cifrará la tarjeta completa antes
@@ -674,12 +685,140 @@ contraseña y se borra del estado tras cada envío.
   parciales; descifrar, modificar y volver a cifrar con una clave nueva lo
   hará el navegador.
 
+## Cifrado del canal (paso 6)
+
+### Qué añade
+
+Hasta el paso 5, todo el tráfico iba por HTTP: la contraseña, el token y los
+datos de las tarjetas viajaban en claro. Desde el paso 6, los dos tramos de
+red van cifrados con TLS, y cada parte tiene su propio certificado X.509
+autofirmado:
+
+```
+Navegador ──TLS──► Cliente C (Vite, :5173) ──TLS──► Servidor S (API, :3000)
+                   Cert_C (OU=Cliente web)          Cert_S (OU=API)
+```
+
+- **No hay alternativa HTTP.** Ni el cliente ni el servidor abren un puerto
+  HTTP. Una conexión HTTP en claro al puerto 3000 se corta en el handshake
+  TLS y no llega a Express.
+- **Sin certificado, no se arranca.** `createHttpsServer`
+  (`server/src/infrastructure/http/https-server.js`) y `client/vite.config.js`
+  lanzan un error si falta el certificado, si falta la clave o si la clave no
+  corresponde al certificado. El mensaje pide ejecutar `npm run cert`. Así no
+  se puede acabar sirviendo por HTTP sin querer.
+- **El proxy verifica al servidor.** El proxy de Vite usa `Cert_S` como única
+  autoridad de confianza (`ca`) y no desactiva la verificación (no hay
+  `secure: false`). Si el servidor presentara otro certificado, el proxy
+  rechazaría la conexión.
+
+El procedimiento completo (comandos, instalación en el navegador y problemas
+frecuentes) está en [certificados autofirmados](certificados-autofirmados.md).
+
+### Notación
+
+Se sigue la notación de los temas 1 a 4 de la asignatura.
+
+| Símbolo | Significado |
+|---|---|
+| `X ∈ {C, S}` | Parte: cliente (Vite) o servidor (API). |
+| `p_X, q_X` | Primos grandes, secretos, elegidos al azar por OpenSSL. |
+| `n_X = p_X · q_X` | Módulo RSA de 2048 bits. |
+| `e_X = 65537` | Exponente público, con `mcd(e_X, Φ(n_X)) = 1`. |
+| `d_X` | Exponente privado: `d_X · e_X mod Φ(n_X) = 1`. |
+| `K_X = (n_X, e_X)` | Clave pública de X. Va dentro del certificado. |
+| `k_X = d_X` | Clave privada de X. Fichero `key.pem`. |
+| `H` | Función resumen SHA-256. |
+| `tbs_X` | Contenido del certificado que se firma: sujeto, emisor, validez, `K_X` y extensiones. |
+| `Cert_X` | Certificado de X: `(tbs_X, σ_X)`. Fichero `cert.pem`. |
+
+### Generación de las claves y del certificado
+
+`npm run cert` (`scripts/generar-certificados.mjs`) ejecuta para cada parte X
+un único `openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes …`, que:
+
+1. Genera el par de claves RSA de X: elige `p_X` y `q_X`, calcula
+   `n_X = p_X · q_X`, `Φ(n_X) = (p_X − 1)(q_X − 1)`, toma `e_X = 65537` y
+   calcula `d_X = e_X⁻¹ mod Φ(n_X)`. Resultado: `K_X = (n_X, e_X)` y
+   `k_X = d_X`.
+2. Construye `tbs_X` con el sujeto `CN=localhost, O=Tarjetas de empresa,
+   OU=<API | Cliente web>`, el emisor igual al sujeto (autofirmado), la
+   validez de 365 días, `K_X` y las extensiones.
+3. Lo **firma con su propia clave privada**:
+   `σ_X = D_k_X(H(tbs_X)) = H(tbs_X)^d_X mod n_X`, en el sentido de
+   autentificación del tema 4 (`r = DkA(m)`). En la práctica, OpenSSL aplica
+   antes al resumen el relleno PKCS#1 v1.5.
+4. Guarda `Cert_X = (tbs_X, σ_X)` en `cert.pem` y `k_X` en `key.pem`, sin
+   cifrar (`-nodes`) y con permisos `0600` en Linux.
+
+Cualquiera que tenga `Cert_X` puede comprobar la firma:
+`E_K_X(σ_X) = σ_X^e_X mod n_X = H(tbs_X)`. Como el emisor es el propio X, esa
+comprobación solo demuestra que el certificado no se ha modificado y que lo
+firmó quien tiene `k_X`. No demuestra quién es X. Por eso la confianza hay que
+establecerla fuera de banda: el proxy recibe `Cert_S` directamente del disco,
+y el usuario compara la huella `H(Cert_C)` que muestra `npm run cert` con la
+que enseña el navegador.
+
+`k_C` y `k_S` son independientes: si se filtra una, la otra sigue protegida.
+
+### Parámetros y justificación
+
+El equipo ha confirmado estos parámetros.
+
+| Parámetro | Valor | Justificación |
+|---|---|---|
+| Algoritmo de clave pública | RSA, `n` de 2048 bits | Es el criptosistema del tema 4. Su seguridad descansa en la dificultad de factorizar `n` sin conocer `p` y `q`. 2048 bits es el mínimo aceptado hoy. |
+| Exponente público | `e = 65537 = 2¹⁶ + 1` | Es el valor por defecto de OpenSSL. Es primo, así que `mcd(e, Φ(n)) = 1` salvo casos triviales, y permite cifrar y verificar firmas deprisa. |
+| Resumen de la firma | SHA-256 | El certificado se firma con `sha256WithRSAEncryption`. SHA-1 ya no se acepta. |
+| Validez | 365 días | Limita cuánto tiempo sirve una clave filtrada. Los navegadores rechazan validez más larga. |
+| `subjectAltName` | `localhost`, `127.0.0.1` y `::1` | Los navegadores solo comprueban el SAN, no el `CN`. |
+| `basicConstraints` | `critical, CA:FALSE` | Es un certificado final: no puede firmar otros certificados. |
+| `keyUsage` | `critical, digitalSignature, keyEncipherment` | Los usos que necesita TLS con RSA. |
+| `extendedKeyUsage` | `serverAuth` | Solo sirve para identificar a un servidor TLS. |
+
+### Qué protege TLS en este caso
+
+Durante el handshake, el servidor (Vite ante el navegador, o la API ante el
+proxy) demuestra que tiene `k_X` firmando datos de la conexión. El cliente lo
+comprueba con `K_X`, sacada del certificado en el que confía. Después, las
+dos partes acuerdan una **clave de sesión simétrica** con la que cifran y
+autentican todo el tráfico, normalmente con AES-GCM. Es el esquema híbrido del
+tema 4: la criptografía asimétrica solo se usa para autenticar y acordar la
+clave de sesión.
+
+Contra un observador de la red, TLS da:
+
+- **Confidencialidad:** la contraseña, el token y las tarjetas viajan cifrados.
+- **Integridad:** cualquier modificación en tránsito se detecta.
+- **Autenticidad del servidor:** el navegador y el proxy solo hablan con quien
+  tiene `k_C` y `k_S`.
+
+### Lo que este paso no protege
+
+- **Los datos llegan en claro al servidor.** TLS protege el transporte, no el
+  almacenamiento: el servidor sigue viendo y guardando la contraseña y las
+  tarjetas en claro. Lo resolverá el cifrado en el navegador de la fase 1.
+- **La confianza en un certificado autofirmado depende del usuario.** Si
+  acepta el aviso del navegador sin comprobar la huella, no detectaría a un
+  atacante que presentara otro certificado.
+- **Las claves privadas se guardan sin cifrar.** Las protegen los permisos
+  del fichero y quedan fuera de git. Cifrarlas con una frase de paso es una
+  mejora pendiente.
+- **El servidor no autentica al cliente.** Cualquiera que llegue al puerto
+  3000 y confíe en `Cert_S` puede hablar con la API. La autenticación mutua
+  TLS lo resolvería, pero de momento el equipo la ha dejado de lado.
+- **Sin cabeceras de seguridad** (HSTS, CSP…). Quedan para otro paso de la
+  fase 1.
+
 ## Trabajo futuro
 
 - Sustituir la firma provisional del token por la firma asimétrica del
   servidor (equipo).
 - Revocar o renovar los tokens, para poder cerrar sesión en el servidor.
-- Cifrar el canal (HTTPS) para que la contraseña no viaje en claro.
+- Autenticación mutua TLS entre el proxy de Vite y la API, con el
+  certificado del cliente (descartada por ahora; se puede retomar).
+- Cifrar las claves privadas de los certificados con una frase de paso y
+  añadir las cabeceras de seguridad (HSTS, CSP…).
 - Almacenar las contraseñas con una función de hash adecuada para contraseñas,
   con sal (la librería concreta está pendiente de decidir; ver
   [Stack tecnológico](stack-tecnologico.md)), en lugar de en texto claro.
