@@ -8,7 +8,7 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 
 - **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión. Todos los usuarios tienen un dashboard **Mis tarjetas** para dar de alta, ver (enmascaradas), modificar y eliminar sus tarjetas. Los administradores ven además un panel para dar de alta, renombrar y eliminar usuarios.
 - **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), las tarjetas del propio usuario (`/api/private/cards`), una sección de administración de usuarios solo para administradores (`/api/private/admin/users`) y un endpoint de salud. Las tarjetas se guardan en `CARD` y la relación N:N `USER_CARD`.
-- **Seguridad:** casi ninguna todavía, a propósito. La contraseña **viaja y se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), los datos de las tarjetas, incluido el CVV, **viajan y se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Los pasos siguientes añadirán la criptografía.
+- **Seguridad:** el canal está cifrado: cliente y servidor solo atienden por **HTTPS**, cada uno con su propio certificado autofirmado generado con OpenSSL (ver [HTTPS y certificados](#https-y-certificados)). Por lo demás, casi ninguna todavía, a propósito. La contraseña **se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), los datos de las tarjetas, incluido el CVV, **se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Los pasos siguientes añadirán la criptografía.
 - **Planificación:** el trabajo se divide en pasos pequeños propuestos como cambios de OpenSpec. Consulta la sección [Planificación](#planificación).
 
 ## Estructura
@@ -18,6 +18,7 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 ├── client/          # Frontend: Vite + React (JavaScript, sin TypeScript)
 ├── server/          # Backend: Node.js + Express + Knex + SQLite (better-sqlite3)
 ├── docs/            # Memoria de la práctica y planes de diseño
+├── scripts/         # Utilidades del proyecto (generación de certificados)
 └── openspec/        # Propuestas de cambio y especificaciones (OpenSpec)
 ```
 
@@ -25,6 +26,7 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 
 - Node.js 20 o posterior
 - npm
+- OpenSSL, para generar los certificados. En Linux suele venir instalado (si no, `sudo apt install openssl`). En Windows viene con Git for Windows (`C:\Program Files\Git\usr\bin\openssl.exe`, añádelo al `PATH`) o se instala con `winget install ShiningLight.OpenSSL.Light`
 
 ## Desarrollo
 
@@ -32,14 +34,32 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 npm install
 npm run db:migrate --workspace=server
 npm run db:seed --workspace=server
+npm run cert
 npm run dev
 ```
 
-`npm run dev` arranca a la vez el cliente y el servidor. Abre el cliente en <http://localhost:5173>. El cliente envía las solicitudes a la API mediante el proxy de Vite; el servidor escucha en <http://localhost:3000>.
+`npm run cert` genera los certificados autofirmados del cliente y del servidor (solo hace falta la primera vez). `npm run dev` arranca a la vez el cliente y el servidor. Abre el cliente en <https://localhost:5173>: la primera vez el navegador avisará de que el certificado no es de confianza (ver [HTTPS y certificados](#https-y-certificados)). El cliente envía las solicitudes a la API mediante el proxy de Vite; el servidor escucha en <https://localhost:3000>.
+
+## HTTPS y certificados
+
+Cliente y servidor **solo** atienden por HTTPS y no abren ningún puerto HTTP. Cada uno tiene su propio par de claves y su propio certificado X.509 autofirmado (RSA 2048, SHA-256, 365 días, válido para `localhost`, `127.0.0.1` y `::1`):
+
+| Parte | Certificado y clave | Quién lo verifica |
+| --- | --- | --- |
+| Cliente (Vite, puerto 5173) | `client/certs/cert.pem`, `client/certs/key.pem` | El navegador |
+| Servidor (API, puerto 3000) | `server/certs/cert.pem`, `server/certs/key.pem` | El proxy de Vite, que usa `server/certs/cert.pem` como única autoridad de confianza |
+
+- `npm run cert` los genera con OpenSSL (`scripts/generar-certificados.mjs`) y muestra la huella SHA-256 de cada uno. Si ya existen no los toca; `npm run cert -- --force` los regenera (por ejemplo, cuando caducan).
+- Los directorios `certs/` están en `.gitignore`: cada persona genera los suyos y las claves privadas nunca se suben al repositorio.
+- Sin certificado, ni el cliente ni el servidor arrancan: muestran un error que pide ejecutar `npm run cert`. Nunca vuelven a HTTP.
+- Si el servidor presenta un certificado distinto de `server/certs/cert.pem`, el proxy rechaza la conexión.
+
+El proceso completo (qué hace cada opción de OpenSSL, cómo comprobar los certificados y cómo hacer que el navegador confíe en el del cliente) está en [certificados autofirmados](docs/primera-memoria/certificados-autofirmados.md).
 
 ## Comandos disponibles
 
 ```sh
+npm run cert         # Genera los certificados autofirmados (--force para regenerarlos)
 npm run dev          # Inicia el cliente y el servidor en modo desarrollo
 npm run build        # Compila el cliente en client/dist/
 npm run start:server # Inicia solo el servidor
@@ -54,6 +74,8 @@ npm test --workspace=client  # Ejecuta los tests de la validación del cliente (
 | `PORT` | `3000` | Puerto del servidor |
 | `JWT_SECRET` | aleatorio por proceso | Secreto **provisional** para firmar los tokens. Mínimo 32 caracteres |
 | `JWT_TTL_SECONDS` | `3600` | Tiempo de vida del token de sesión, en segundos |
+| `TLS_CERT_FILE` | `server/certs/cert.pem` | Certificado del servidor |
+| `TLS_KEY_FILE` | `server/certs/key.pem` | Clave privada del servidor |
 
 Si `JWT_SECRET` no está definido, el servidor genera un secreto aleatorio y lo avisa en la consola. Entonces los tokens dejan de valer cada vez que el servidor se reinicia, también cuando `npm run dev` lo recarga tras un cambio de código: habrá que volver a iniciar sesión. Para no perder la sesión al desarrollar, define un secreto propio. Para probar la caducidad, usa un tiempo de vida corto:
 
@@ -113,61 +135,61 @@ Las rutas de `/api/private/admin` exigen además que el usuario sea administrado
 
 Las rutas de `/api/private/cards` solo operan sobre las tarjetas relacionadas con el usuario del token en `USER_CARD`; ser administrador no da acceso a las de otros. Una tarjeta ajena, inexistente o con un identificador que no es un UUID responde `404`, sin distinguir el caso.
 
-Ejemplo con `curl` (con el servidor en marcha y el seed aplicado):
+Ejemplo con `curl` (con el servidor en marcha y el seed aplicado, desde la raíz del proyecto). `--cacert` le dice a `curl` que confíe en el certificado autofirmado del servidor; sin él, rechaza la conexión, y por `http://` el servidor no responde:
 
 ```sh
 # 1. Inicia sesión y guarda el token
-TOKEN=$(curl -s -X POST http://localhost:3000/api/public/login \
+TOKEN=$(curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/public/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"empleado@empresa.com","password":"demo1234"}' \
   | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).token))')
 
 # 2. Consulta la sección privada con el token → 200
-curl -s http://localhost:3000/api/private/me -H "Authorization: Bearer $TOKEN"
+curl -s --cacert server/certs/cert.pem https://localhost:3000/api/private/me -H "Authorization: Bearer $TOKEN"
 
 # 3. Sin token → 401 {"error":"No autenticado"}
-curl -s -i http://localhost:3000/api/private/me
+curl -s --cacert server/certs/cert.pem -i https://localhost:3000/api/private/me
 ```
 
 Administración de usuarios con `curl`, como administrador:
 
 ```sh
-ADMIN_TOKEN=$(curl -s -X POST http://localhost:3000/api/public/login \
+ADMIN_TOKEN=$(curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/public/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@empresa.com","password":"admin1234"}' \
   | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).token))')
 
 # Alta de un empleado → 201
-curl -s -X POST http://localhost:3000/api/private/admin/users \
+curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/private/admin/users \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"name":"Ana Pérez","email":"ana@empresa.com","password":"inicial123"}'
 
 # Lista de usuarios → 200
-curl -s http://localhost:3000/api/private/admin/users -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -s --cacert server/certs/cert.pem https://localhost:3000/api/private/admin/users -H "Authorization: Bearer $ADMIN_TOKEN"
 
 # Con el token de un empleado → 403 {"error":"Acceso denegado"}
-curl -s -i http://localhost:3000/api/private/admin/users -H "Authorization: Bearer $TOKEN"
+curl -s --cacert server/certs/cert.pem -i https://localhost:3000/api/private/admin/users -H "Authorization: Bearer $TOKEN"
 ```
 
 Tarjetas con `curl`, con el token del empleado del primer ejemplo:
 
 ```sh
 # Lista de tarjetas → 200 con la tarjeta de prueba •••• 1111
-curl -s http://localhost:3000/api/private/cards -H "Authorization: Bearer $TOKEN"
+curl -s --cacert server/certs/cert.pem https://localhost:3000/api/private/cards -H "Authorization: Bearer $TOKEN"
 
 # Alta → 201 {"id":"…","last4":"4444",…}
-CARD_ID=$(curl -s -X POST http://localhost:3000/api/private/cards \
+CARD_ID=$(curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/private/cards \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"number":"5555 5555 5555 4444","expiryMonth":11,"expiryYear":2029,"cvv":"456"}' \
   | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).id))')
 
 # Cambia solo la caducidad → 200
-curl -s -X PATCH "http://localhost:3000/api/private/cards/$CARD_ID" \
+curl -s --cacert server/certs/cert.pem -X PATCH "https://localhost:3000/api/private/cards/$CARD_ID" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"expiryMonth":6,"expiryYear":2031}'
 
 # Borra la tarjeta → 204
-curl -s -i -X DELETE "http://localhost:3000/api/private/cards/$CARD_ID" -H "Authorization: Bearer $TOKEN"
+curl -s --cacert server/certs/cert.pem -i -X DELETE "https://localhost:3000/api/private/cards/$CARD_ID" -H "Authorization: Bearer $TOKEN"
 ```
 
 El servidor sigue una arquitectura por capas (dominio, aplicación e infraestructura) descrita en [implementación y seguridad](docs/primera-memoria/implementacion-y-seguridad.md).

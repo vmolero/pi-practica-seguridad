@@ -6,6 +6,7 @@ import { loadConfig } from './src/config.js';
 import { createDatabase } from './src/infrastructure/database/knex.js';
 import { createCardRepository } from './src/infrastructure/database/card-repository.js';
 import { createUserRepository } from './src/infrastructure/database/user-repository.js';
+import { createHttpsServer } from './src/infrastructure/http/https-server.js';
 import { TOKEN_ISSUER } from './src/infrastructure/security/issuer.js';
 import { createTokenService } from './src/infrastructure/security/token-service.js';
 
@@ -24,6 +25,15 @@ const cardService = createCardService({ cardRepository: createCardRepository(kne
 
 const app = createApp({ authService, tokenService, userAdminService, userRepository, cardService });
 
-app.listen(config.port, () => {
-  console.log(`API server listening at http://localhost:${config.port}`);
+// Solo HTTPS: sin un certificado válido el servidor no arranca.
+let server;
+try {
+  server = createHttpsServer({ app, certFile: config.tlsCertFile, keyFile: config.tlsKeyFile });
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+
+server.listen(config.port, () => {
+  console.log(`API server listening at https://localhost:${config.port}`);
 });

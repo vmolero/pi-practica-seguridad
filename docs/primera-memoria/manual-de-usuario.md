@@ -1,5 +1,38 @@
 # Manual de usuario
 
+# Antes de empezar: conexión segura
+
+La aplicación solo funciona por **HTTPS**. Ábrela en
+<https://localhost:5173>; por `http://` no responde.
+
+La primera vez hay que generar los certificados del cliente y del servidor
+desde la raíz del proyecto:
+
+```bash
+npm run cert
+```
+
+El comando muestra la huella SHA-256 de cada certificado. Anota la del
+cliente: es la que verás en el navegador.
+
+Como los certificados son autofirmados, la primera vez que abras la
+aplicación el navegador avisará de que la conexión no es privada
+(`NET::ERR_CERT_AUTHORITY_INVALID`). Hay dos formas de continuar:
+
+- **Aceptar la excepción:** comprueba en el aviso («Ver certificado») que la
+  huella SHA-256 coincide con la del cliente y pulsa «Configuración
+  avanzada» y después «Acceder a localhost (sitio no seguro)». En Firefox es
+  «Avanzado…» y después «Aceptar el riesgo y continuar».
+- **Importar el certificado** `client/certs/cert.pem` en el navegador o en el
+  sistema para que no vuelva a avisar.
+
+Los pasos detallados, también para Windows, están en
+[certificados autofirmados](certificados-autofirmados.md).
+
+Si el cliente o el servidor no arrancan y piden ejecutar `npm run cert`,
+faltan los certificados. Si el navegador avisa de que el certificado ha
+caducado, regenéralos con `npm run cert -- --force` y vuelve a aceptarlos.
+
 # Pantalla de Login
 
 Es la primera pantalla que ve cualquier usuario (gestor o empleado) al abrir la

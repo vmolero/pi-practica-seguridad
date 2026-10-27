@@ -13,8 +13,9 @@ El frontend usa **React** como librería de interfaz de usuario y **Vite** como
 herramienta de desarrollo y empaquetado. Está escrito en **JavaScript** (sin
 TypeScript).
 
-En desarrollo, Vite sirve el cliente en `http://localhost:5173` y redirige las
-peticiones a `/api` hacia el servidor mediante su proxy.
+En desarrollo, Vite sirve el cliente por HTTPS en `https://localhost:5173` y
+redirige las peticiones a `/api` hacia el servidor (`https://localhost:3000`)
+mediante su proxy, que verifica el certificado del servidor.
 
 ## Backend
 
@@ -24,6 +25,15 @@ El servidor usa **Node.js** (JavaScript) con:
 - **Knex**: constructor de consultas SQL y gestor de migraciones del esquema.
 - **SQLite** como base de datos, a través del controlador **better-sqlite3**.
   Los datos se guardan en el archivo `server/data/app.sqlite`.
+
+## Cifrado del canal
+
+Cliente y servidor solo atienden por **HTTPS** (`node:https` en el servidor y
+la opción `server.https` de Vite en el cliente). Cada uno tiene su propio
+certificado X.509 autofirmado, que se genera con **OpenSSL** mediante
+`npm run cert` (`scripts/generar-certificados.mjs`). OpenSSL es, por tanto,
+una herramienta necesaria para poner en marcha el proyecto. El proceso se
+describe en [certificados autofirmados](certificados-autofirmados.md).
 
 ## Librerías utilizadas
 

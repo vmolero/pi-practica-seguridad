@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "concurrently -k -n client,server -c cyan,green \"npm:dev --workspace=client\" \"npm:dev --workspace=server\"",
     "build": "npm run build --workspace=client",
+    "cert": "node scripts/generar-certificados.mjs",
     "start:server": "npm run start --workspace=server"
   },
   "devDependencies": {
