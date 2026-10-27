@@ -39,6 +39,60 @@ describe en [certificados autofirmados](certificados-autofirmados.md).
 
 ### Librerías criptográficas
 
-**Pendiente de decidir.** Todavía no se ha elegido qué librerías se usarán para
-el almacenamiento seguro de contraseñas ni para el cifrado de los datos de las
-tarjetas. Esta sección se completará cuando se tome la decisión.
+**Propuesta pendiente de confirmar por el equipo.** El diseño de la fase 1
+(`openspec/changes/fase-1-registro-y-cifrado/design.md`, decisiones D1 y D2)
+propone usar solo criptografía nativa, sin dependencias externas:
+**Web Crypto** en el navegador y **`node:crypto`** en el servidor. Los
+algoritmos concretos los decide el equipo. Si cambian, estas tablas se
+actualizarán.
+
+#### Cliente (navegador): Web Crypto API (`crypto.subtle`)
+
+Está integrada en todos los navegadores modernos y no hay que instalar nada.
+
+| Uso | Primitiva |
+|---|---|
+| Derivar claves desde la contraseña | PBKDF2-HMAC-SHA-256 y HKDF |
+| Cifrar la clave privada y los datos de las tarjetas | AES-GCM (también hay AES-CBC) |
+| Par de claves del usuario y envoltura de la clave de cada tarjeta | RSA-OAEP |
+| Firma (reto-respuesta) | ECDSA P-256 |
+| Valores aleatorios (VI, claves, sales) | `crypto.getRandomValues` |
+
+#### Servidor (Node.js): módulo nativo `node:crypto`
+
+Por debajo usa la versión de OpenSSL que incluye Node.js.
+
+| Uso | Primitiva |
+|---|---|
+| Hash lento de la clave de login con sal y pimienta | `crypto.scrypt` (`crypto.argon2` solo existe a partir de Node 24) |
+| Resúmenes y HMAC | `createHash` y `createHmac` (incluido `sha3-256`) |
+| Comparación en tiempo constante | `timingSafeEqual` |
+| Valores aleatorios | `randomBytes` |
+| Firma del servidor | `sign` y `verify` |
+
+#### Otras piezas que ya se usan
+
+- **`jose`** (npm): firma y verificación del token de sesión (JWT).
+  **Provisional**: hoy firma con HS256 (HMAC con secreto compartido) hasta
+  que el equipo entregue la firma asimétrica con el par de claves del
+  servidor.
+- **`node:https`** y la herramienta **OpenSSL**: cifrado del canal (ver el
+  apartado «Cifrado del canal»).
+
+#### Decisiones abiertas
+
+1. **SHA3-256 en el navegador.** Los diagramas de secuencia
+   (`docs/diagrama-secuencia-*.md`) calculan `H(pw) = SHA3-256(pw)` en el
+   cliente, pero Web Crypto no tiene SHA-3: solo SHA-1, SHA-256, SHA-384 y
+   SHA-512. Hay dos opciones:
+   - usar SHA-256 o, mejor, PBKDF2 sobre SHA-256, como propone el diseño de
+     la fase 1. Así además se evita que el hash sin sal sea demasiado rápido
+     frente a la fuerza bruta;
+   - añadir una librería pequeña y auditada como `@noble/hashes`, que tiene
+     SHA-3, scrypt y Argon2 en JavaScript puro.
+2. **Argon2 en el servidor.** `crypto.argon2` requiere Node 24, pero el
+   proyecto declara `node >= 20` en `package.json`. Si se elige Argon2 habrá
+   que subir la versión mínima de Node. `scrypt` está disponible en todas las
+   versiones.
+3. **Argon2 o scrypt en el navegador.** Web Crypto no los tiene. Harían falta
+   una librería (`@noble/hashes` o una en WASM).
