@@ -3,3 +3,5 @@ client/dist/
 server/data/*.sqlite*
 .env
 .DS_Store
+server/certs/
+client/certs/
