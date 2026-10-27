@@ -158,7 +158,8 @@ sequenceDiagram
 Al iniciar sesión el navegador recalcula `H(pw)` y obtiene de nuevo `K_L` y
 `K_D`. Envía `K_L` para autenticarse, recibe `VI` y `c_kU`, y descifra la
 clave privada con `k_U = D_K_D(c_kU)`. Después usa `K_U` y `k_U` para cifrar y
-descifrar los datos de sus tarjetas.
+descifrar los datos de sus tarjetas. El detalle está en
+[diagrama-secuencia-login.md](diagrama-secuencia-login.md).
 
 ## Puntos que hay que decidir
 
