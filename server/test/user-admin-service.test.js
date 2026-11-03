@@ -8,11 +8,26 @@ const KEYS = {
   encryptedPrivateKey: 'Y2lmcmFkYS1jbGF2ZS1wcml2',
   privateKeyIv: 'dmVjdG9yLWluaWNpYWwtMTY=',
 };
+const LOGIN_KEY = Uint8Array.from({ length: 16 }, (_, i) => i);
+
+// Servicio de clave de login falso: sales correlativas y hash legible.
+function createFakeLoginKeyService() {
+  let salts = 0;
+  return {
+    newSalt() {
+      salts += 1;
+      return `sal-${salts}`;
+    },
+    async hash(loginKey, salt) {
+      return `hash(${loginKey[0]}..${loginKey[15]}|${salt})`;
+    },
+  };
+}
 
 function createInMemoryUserRepository() {
   const users = [
-    { id: 1, name: 'Empleado', email: 'empleado@empresa.com', password: 'demo1234', isAdmin: 0 },
-    { id: 2, name: 'Admin', email: 'admin@empresa.com', password: 'admin1234', isAdmin: 1 },
+    { id: 1, name: 'Empleado', email: 'empleado@empresa.com', loginKeySalt: 's1', loginKeyHash: 'h1', isAdmin: 0 },
+    { id: 2, name: 'Admin', email: 'admin@empresa.com', loginKeySalt: 's2', loginKeyHash: 'h2', isAdmin: 1 },
   ];
   const calls = { remove: 0 };
 
@@ -47,7 +62,7 @@ function createInMemoryUserRepository() {
   };
 }
 
-// Ni la contraseña ni el material de claves salen del servicio.
+// Ni la sal, ni el hash, ni el material de claves salen del servicio.
 function assertNoPassword(user) {
   assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'isAdmin', 'name']);
 }
@@ -58,7 +73,7 @@ describe('userAdminService', () => {
 
   beforeEach(() => {
     repository = createInMemoryUserRepository();
-    service = createUserAdminService({ userRepository: repository });
+    service = createUserAdminService({ userRepository: repository, loginKeyService: createFakeLoginKeyService() });
   });
 
   it('lista los usuarios sin contraseña', async () => {
@@ -68,22 +83,34 @@ describe('userAdminService', () => {
     assert.equal(users[1].isAdmin, true);
   });
 
-  it('da de alta un usuario con sus claves y lo devuelve sin contraseña ni claves', async () => {
+  it('da de alta un usuario con sus claves y lo devuelve sin sal, hash ni claves', async () => {
     const created = await service.create({
-      name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS,
+      name: 'Ana', email: 'ana@empresa.com', loginKey: LOGIN_KEY, isAdmin: false, ...KEYS,
     });
     assertNoPassword(created);
     assert.deepEqual(created, { id: 3, name: 'Ana', email: 'ana@empresa.com', isAdmin: false });
-    // El repositorio recibe los tres valores exactos.
+    // El repositorio recibe la sal nueva, el hash y los tres valores exactos; nunca loginKey.
     const stored = repository.users.find((user) => user.email === 'ana@empresa.com');
+    assert.equal(stored.loginKeySalt, 'sal-1');
+    assert.equal(stored.loginKeyHash, 'hash(0..15|sal-1)');
+    assert.equal('loginKey' in stored, false);
+    assert.equal('password' in stored, false);
     assert.equal(stored.publicKey, KEYS.publicKey);
     assert.equal(stored.encryptedPrivateKey, KEYS.encryptedPrivateKey);
     assert.equal(stored.privateKeyIv, KEYS.privateKeyIv);
   });
 
+  it('dos altas con la misma clave de login reciben sales y hashes distintos', async () => {
+    await service.create({ name: 'Ana', email: 'ana@empresa.com', loginKey: LOGIN_KEY, isAdmin: false, ...KEYS });
+    await service.create({ name: 'Bea', email: 'bea@empresa.com', loginKey: LOGIN_KEY, isAdmin: false, ...KEYS });
+    const [ana, bea] = ['ana@empresa.com', 'bea@empresa.com'].map((email) => repository.users.find((u) => u.email === email));
+    assert.notEqual(ana.loginKeySalt, bea.loginKeySalt);
+    assert.notEqual(ana.loginKeyHash, bea.loginKeyHash);
+  });
+
   it('rechaza un email repetido', async () => {
     await assert.rejects(
-      service.create({ name: 'Otro', email: 'admin@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS }),
+      service.create({ name: 'Otro', email: 'admin@empresa.com', loginKey: LOGIN_KEY, isAdmin: false, ...KEYS }),
       DuplicateEmailError,
     );
     assert.equal(repository.users.length, 2);
@@ -94,7 +121,7 @@ describe('userAdminService', () => {
       throw Object.assign(new Error('UNIQUE constraint failed'), { code: 'SQLITE_CONSTRAINT_UNIQUE' });
     };
     await assert.rejects(
-      service.create({ name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS }),
+      service.create({ name: 'Ana', email: 'ana@empresa.com', loginKey: LOGIN_KEY, isAdmin: false, ...KEYS }),
       DuplicateEmailError,
     );
   });

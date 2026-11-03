@@ -50,3 +50,74 @@ propias fábricas.
 | --- | --- |
 | Algoritmo de firma, generación y custodia de claves, `sign` y `verify` | Equipo |
 | Claims, caducidad, middleware, router privado, cliente y tests | Claude |
+
+# Servicio de clave de login
+
+`login-key-service.js` es la capa de seguridad del **paso 8**: el hash lento
+de la clave de login `K_L` con sal y pimienta, su verificación en tiempo
+constante y la sal ficticia para emails inexistentes. Como con el token, la
+implementación definitiva es del **equipo**; mientras tanto el archivo
+contiene una implementación **provisional** de Claude con `scrypt` de
+`node:crypto`.
+
+## Esquema
+
+```
+h_L = KDF(K_L ‖ pimienta, sal)
+```
+
+- `K_L`: 16 bytes que el navegador deriva de la contraseña
+  (`client/src/security/claves-usuario.js`, `derivarClaves`). El servidor
+  nunca ve la contraseña.
+- `sal`: 16 bytes aleatorios por usuario, en `USER.loginKeySalt` (base64).
+- `pimienta`: `LOGIN_PEPPER` (`src/config.js`), igual para todos los usuarios
+  y fuera de la base de datos. Sin ella se usa una pimienta de desarrollo
+  pública, con aviso en consola.
+- `h_L`: `USER.loginKeyHash` (base64).
+
+## Contrato
+
+```js
+createLoginKeyService({ pepper }) → { newSalt, hash, verify, fakeSalt }
+```
+
+- `newSalt() → string`: 16 bytes aleatorios en base64, distintos cada vez.
+- `hash(loginKey, salt) → Promise<string>`: `loginKey` es un `Uint8Array` de
+  16 bytes y `salt` la sal en base64. Devuelve `h_L` en base64. Determinista
+  para los mismos argumentos y la misma pimienta; cambia si cambia cualquiera.
+- `verify(loginKey, salt, expectedHash) → Promise<boolean>`: recalcula el hash
+  y lo compara con `expectedHash` en tiempo constante (`timingSafeEqual`). Si
+  `expectedHash` tiene otra longitud o no es base64 bien formado devuelve
+  `false`, pero calcula el hash igualmente para tardar lo mismo.
+- `fakeSalt(email) → string`: sal ficticia determinista para un email que no
+  existe, de 16 bytes en base64 y distinta entre emails. El servicio de
+  autenticación la usa para verificar contra un hash ficticio y así tardar
+  lo mismo que con un usuario real.
+- `loginKey` que no sea un `Uint8Array` de 16 bytes → `TypeError`.
+
+## Implementación provisional
+
+| Parámetro | Valor |
+|---|---|
+| KDF | `scrypt` (`node:crypto`), nativo en Windows y Linux |
+| `N`, `r`, `p` | `2^15`, `8`, `1` (unas decenas de milisegundos por hash) |
+| Salida | 32 bytes |
+| Entrada | bytes de `K_L` seguidos de los bytes UTF-8 de la pimienta |
+| `fakeSalt` | `HMAC-SHA-256(pimienta, email)` truncado a 16 bytes |
+
+## Tests de contrato
+
+`test/login-key-service.contract.js` exporta
+`runLoginKeyServiceContractTests(createService)`, que toda implementación
+debe superar sin modificar el archivo. `test/login-key-service.test.js` la
+ejecuta contra la provisional. Para la del equipo basta con añadir otro
+archivo de test que la invoque con su fábrica. Al cambiar la implementación
+hay que volver a sembrar (`npm run db:seed --workspace=server`): los hashes
+anteriores dejan de valer.
+
+## Reparto
+
+| Parte | Responsable |
+| --- | --- |
+| Elección de la KDF (scrypt con parámetros medidos, Argon2id o bcrypt) y sus parámetros, `hash`, `verify` y `fakeSalt` | Equipo |
+| Contrato, tests de contrato, sal y pimienta en configuración, servicio de autenticación, alta, semilla, cliente y documentación | Claude |

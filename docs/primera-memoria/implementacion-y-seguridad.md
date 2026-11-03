@@ -28,7 +28,8 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 ├── package.json              # Define los workspaces y los scripts comunes (dev, build, cert...)
 ├── scripts/
 │   ├── generar-certificados.mjs # npm run cert: certificados autofirmados con OpenSSL
-│   └── generar-claves-usuario.mjs # Imprime las claves de un usuario para probar el alta con curl
+│   ├── generar-claves-usuario.mjs # Imprime las claves de un usuario para probar el alta con curl
+│   └── derivar-clave-login.mjs  # Imprime la clave de login K_L de una contraseña, para curl
 ├── client/                   # Frontend: Vite + React (JavaScript)
 │   ├── certs/                # Certificado y clave del cliente (no se versiona)
 │   ├── index.html            # Página única; monta la aplicación en #root
@@ -42,7 +43,7 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │       │   ├── auth.js       # login(), getCurrentUser() y logout()
 │       │   ├── cards.js      # listCards(), createCard(), updateCard(), deleteCard()
 │       │   ├── http.js       # apiFetch(): añade el token; 401 → sesión caducada
-│       │   └── session.js    # Token de sesión, solo en memoria
+│       │   └── session.js    # Token de sesión y K_D, solo en memoria
 │       ├── validation/
 │       │   └── card.js       # validateCardForm(): mismas reglas que el servidor
 │       ├── security/
@@ -61,7 +62,7 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
     ├── test/                 # Tests con node:test
     └── src/
         ├── app.js            # createApp(): monta los routers y el manejo de errores
-        ├── config.js         # loadConfig(): puerto, token y rutas del certificado TLS
+        ├── config.js         # loadConfig(): puerto, token, pimienta y rutas del certificado TLS
         ├── domain/
         │   ├── user.js       # toPublicUser() y toAdminUser(): datos sin contraseña
         │   ├── card.js       # toCard() y toMaskedCard(): sin número completo ni CVV
@@ -79,7 +80,8 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
             ├── security/
             │   ├── README.md            # Contrato del servicio de tokens (equipo/Claude)
             │   ├── issuer.js            # Valor del claim iss
-            │   └── token-service.js     # PROVISIONAL: firma y verificación HS256
+            │   ├── token-service.js     # PROVISIONAL: firma y verificación HS256
+            │   └── login-key-service.js # PROVISIONAL: hash lento de K_L con sal y pimienta (scrypt)
             └── http/
                 ├── https-server.js      # createHttpsServer(): solo HTTPS, sin certificado no arranca
                 ├── public-router.js     # /api/public (sin sesión)
@@ -195,7 +197,9 @@ dominio):
   la contraseña.
 - **Aplicación** (`application/auth-service.js`): el servicio de autenticación.
   `login({ email, password })` pide el usuario al repositorio y comprueba la
-  contraseña. No sabe nada de HTTP ni de la base de datos.
+  contraseña. No sabe nada de HTTP ni de la base de datos. *(Desde el paso 8
+  recibe `{ email, loginKey }` y delega la comprobación en el servicio de
+  clave de login.)*
 - **Infraestructura**:
   - `http/public-router.js` monta la sección pública de la API,
     `/api/public`, con los endpoints que no requieren sesión.
@@ -213,10 +217,14 @@ repositorio en memoria o una base de datos temporal sin tocar la real.
 2. `parseLoginRequest` exige que `email` y `password` sean cadenas no vacías
    de como máximo 254 y 128 caracteres. Si no lo son, responde `400` sin
    consultar la base de datos. El email se normaliza (sin espacios y en
-   minúsculas); la contraseña se usa tal cual.
+   minúsculas); la contraseña se usa tal cual. *(Desde el paso 8 el cuerpo es
+   `{ email, loginKey }`, con `loginKey` de exactamente 16 bytes en base64, y
+   un cuerpo con `password` responde `400`.)*
 3. El servicio busca el usuario por email y compara la contraseña con `===`.
    Si el usuario no existe o la contraseña no coincide, lanza
-   `InvalidCredentialsError`.
+   `InvalidCredentialsError`. *(Desde el paso 8 compara el hash lento de la
+   clave de login en tiempo constante; ver
+   [paso 8](#clave-de-login-con-sal-y-pimienta-paso-8).)*
 4. Si las credenciales son válidas, el servicio firma el token de sesión
    (ver más abajo) y el router responde `200` con
    `{ "token", "user": toPublicUser(user) }`. Si no, responde `401` con
@@ -236,8 +244,10 @@ repositorio en memoria o una base de datos temporal sin tocar la real.
 | `id` | entero | Clave primaria autoincremental |
 | `name` | texto | Obligatorio |
 | `email` | texto | Obligatorio, único, siempre en minúsculas |
-| `password` | texto | Obligatorio. **En texto claro** en este paso |
+| `password` | texto | Obligatorio. **En texto claro** en este paso. *Eliminada en el paso 8.* |
 | `isAdmin` | booleano | `true` para gestores; por defecto `false` |
+| `loginKeySalt` | texto | Desde el paso 8: sal de 16 bytes del usuario (base64) |
+| `loginKeyHash` | texto | Desde el paso 8: `h_L = KDF(K_L ‖ pimienta, sal)` (base64) |
 | `publicKey` | texto | Desde el paso 7: clave pública RSA del usuario (SPKI, base64) |
 | `encryptedPrivateKey` | texto | Desde el paso 7: clave privada cifrada con `K_D` (base64) |
 | `privateKeyIv` | texto | Desde el paso 7: vector de inicialización del cifrado anterior (base64) |
@@ -252,7 +262,10 @@ Este paso deja a propósito sin resolver todos los riesgos siguientes:
 - La contraseña viaja en claro por HTTP: cualquiera que observe la red la ve.
   *(Resuelto en el paso 6: el canal va cifrado con TLS.)*
 - La contraseña se guarda en claro: quien lea la base de datos obtiene todas.
-- La comparación con `===` no es de tiempo constante.
+  *(Resuelto en el paso 8: el servidor no recibe la contraseña y guarda solo
+  un hash lento de la clave de login con sal y pimienta.)*
+- La comparación con `===` no es de tiempo constante. *(Resuelto en el
+  paso 8: `timingSafeEqual`.)*
 - No hay límite de intentos de login.
 
 La comparación está aislada en una sola línea de `auth-service.js`, marcada
@@ -804,6 +817,7 @@ Contra un observador de la red, TLS da:
 - **Los datos llegan en claro al servidor.** TLS protege el transporte, no el
   almacenamiento: el servidor sigue viendo y guardando la contraseña y las
   tarjetas en claro. Lo resolverá el cifrado en el navegador de la fase 1.
+  *(Para la contraseña, resuelto en el paso 8; las tarjetas siguen en claro.)*
 - **La confianza en un certificado autofirmado depende del usuario.** Si
   acepta el aviso del navegador sin comprobar la huella, no detectaría a un
   atacante que presentara otro certificado.
@@ -937,7 +951,8 @@ comprobar que se rechaza.
 - **La contraseña sigue en claro en el servidor.** Quien lea la base de datos
   puede derivar `K_D` de `password` y abrir `c_kU`. La garantía de que el
   servidor no puede obtener la clave privada solo llega en el paso 8, cuando
-  el servidor deje de recibir `pw` y reciba únicamente `K_L`.
+  el servidor deje de recibir `pw` y reciba únicamente `K_L`. *(Resuelto en
+  el paso 8.)*
 - **`H(pw)` no lleva sal ni es lento.** Quien tenga `c_kU` y `VI` puede probar
   contraseñas a toda velocidad hasta que una abra la clave privada. Lo
   mitigan la longitud mínima de 8 caracteres y, en el futuro, una derivación
@@ -952,26 +967,150 @@ comprobar que se rechaza.
   hecha con `curl` puede enviar una `K_U` cuya `k_U` nadie tiene; con el
   panel no ocurre.
 
+## Clave de login con sal y pimienta (paso 8)
+
+### Qué añade
+
+Hasta el paso 7 la contraseña viajaba (cifrada por TLS) hasta el servidor,
+que la guardaba y la comparaba en texto claro. Desde el paso 8 **la
+contraseña no sale del navegador**: de las dos mitades de `h = H(pw)` que ya
+calculaba el paso 7, el cliente envía solo la clave de login `K_L`, y el
+servidor guarda de ella únicamente una sal por usuario y un hash lento con
+pimienta. La columna `password` desaparece de `USER`. Con ello se cumple la
+idea central de las notas del 13 de octubre: el servidor no tiene información
+suficiente para obtener `K_D` ni, por tanto, la clave privada del usuario.
+
+### Notación
+
+Es la de los diagramas de alta y de login (`docs/diagrama-secuencia-*.md`).
+
+| Símbolo | Significado |
+|---|---|
+| `pw` | Contraseña escrita por el usuario (login) o por el gestor (alta). |
+| `h = H(pw)` | Resumen de 256 bits de `pw`. Diseño: SHA3-256. **Provisional:** SHA-256. |
+| `K_L = h[0..127]` | Clave de login, 128 bits. Viaja al servidor en base64 (`loginKey`). |
+| `K_D = h[128..255]` | Clave de datos, 128 bits. Nunca sale del navegador. |
+| `sal` | 16 bytes aleatorios por usuario (`loginKeySalt`, base64). |
+| `pimienta` | Secreto de configuración, igual para todos (`LOGIN_PEPPER`). |
+| `h_L = KDF(K_L ‖ pimienta, sal)` | Hash lento guardado (`loginKeyHash`, base64). |
+| `h'_L` | El mismo cálculo en el login con la `K_L` recibida. |
+| `=ct` | Comparación en tiempo constante (`timingSafeEqual`). |
+| `sal_falsa = HMAC-SHA-256(pimienta, email)[0..127]` | Sal ficticia para un email inexistente. |
+
+### Flujo del alta
+
+1. El panel comprueba que la contraseña mide entre 8 y 128 caracteres
+   (`La contraseña debe tener entre 8 y 128 caracteres`) y que las dos
+   coinciden. El servidor ya no puede comprobar la longitud porque no ve
+   `pw`.
+2. `derivarClaves(pw)` → `K_L`, `K_D`; `generarClavesUsuario(pw)` → `K_U`,
+   `VI`, `c_kU` (paso 7). `K_D` se borra.
+3. `POST /api/private/admin/users` con
+   `{ name, email, isAdmin, loginKey = base64(K_L), K_U, VI, c_kU }`.
+4. `parseCreateUserRequest` exige que `loginKey` sea base64 estándar de
+   exactamente 16 bytes (y que recodifique igual, para rechazar relleno o
+   caracteres sobrantes); un cuerpo con `password` responde `400`.
+5. El servicio de administración pide al servicio de clave de login una sal
+   nueva, calcula `h_L` y guarda `loginKeySalt` y `loginKeyHash`. `K_L` solo
+   existe como argumento y se descarta.
+
+### Flujo del login
+
+1. `login({ email, password })` en el navegador deriva `K_L` y `K_D` y envía
+   `{ email, loginKey }`. La contraseña no se guarda en ningún sitio.
+2. `parseLoginRequest` admite solo `email` y `loginKey`; cualquier otro campo
+   (incluido `password`) responde `400` sin consultar la base de datos.
+3. `auth-service.login` busca el usuario por email:
+   - si existe y tiene clave de login, `verify(K_L, sal, h_L)`: recalcula
+     `h'_L` y compara `h'_L =ct h_L`;
+   - si no existe, o su fila tiene `loginKeyHash` a `NULL` (creada antes de
+     este paso), `verify(K_L, sal_falsa(email), HASH_FICTICIO)`, donde el hash
+     ficticio es un hash constante de la longitud correcta calculado una vez.
+     Así se recorre la misma ruta (KDF y comparación) y se tarda un tiempo
+     similar, y la respuesta es la misma `401 { "error": "Credenciales
+     inválidas" }`.
+4. Si la clave es correcta, se emite el token como hasta ahora. El cliente
+   guarda el token y `K_D` en memoria (`session.js`); con cualquier error
+   borra `K_D`. Cerrar sesión o recibir un `401` en la sección privada borra
+   las dos cosas.
+
+### Quién conoce cada dato
+
+| Dato | Quién lo conoce | Dónde se guarda |
+|---|---|---|
+| `pw` | Solo el usuario (y el gestor en el alta). | En ningún sitio. |
+| `K_L` | El navegador, mientras dura la petición; el servidor, mientras calcula `h_L` o `h'_L`. | En ningún sitio. |
+| `K_D` | Solo el navegador, en memoria, mientras dura la sesión. | En ningún sitio. |
+| `sal` | Pública. | `loginKeySalt`. |
+| `pimienta` | Solo el servidor. | Configuración (`LOGIN_PEPPER`), fuera de la base de datos. |
+| `h_L` | Solo el servidor. | `loginKeyHash`. |
+
+Un volcado de la base de datos no permite iniciar sesión (haría falta `K_L`,
+que no está) ni probar contraseñas sin conocer también la pimienta; con la
+pimienta, cada intento cuesta una evaluación de la KDF lenta.
+
+### Parámetros de la KDF provisional
+
+La función `KDF`, la sal, la pimienta, la comparación y la sal ficticia son
+capa de seguridad del equipo, detrás del contrato `createLoginKeyService`
+descrito en `server/src/infrastructure/security/README.md` y fijado por los
+tests de contrato de `server/test/login-key-service.contract.js`. La
+implementación provisional usa `scrypt` de `node:crypto`:
+
+| Parámetro | Valor | Justificación |
+|---|---|---|
+| KDF | `scrypt` | Nativo en Node, sin compilar nada en Windows ni Linux. Las notas admiten scrypt, bcrypt o Argon2; el equipo elige la definitiva. |
+| `N`, `r`, `p` | `2^15`, `8`, `1` | Unas decenas de milisegundos y 32 MiB por hash: lento para un atacante, imperceptible para un usuario. El equipo mide y ajusta. |
+| Salida | 32 bytes | Un hash de 256 bits. |
+| Entrada | bytes de `K_L` ‖ bytes UTF-8 de la pimienta | Como en las notas: la pimienta entra en el cálculo, no se guarda. |
+| `sal` | 16 bytes de `randomBytes` | Distinta por usuario: dos usuarios con la misma contraseña tienen `h_L` distintos. |
+| `sal_falsa` | `HMAC-SHA-256(pimienta, email)` truncado a 16 bytes | Estable entre peticiones, así un email inexistente no se distingue de uno real ni por tiempo ni por repetición. |
+| Pimienta | `LOGIN_PEPPER` ≥ 16 caracteres; ausente → pimienta de desarrollo con aviso | Una pimienta aleatoria por proceso (como `JWT_SECRET`) invalidaría todos los hashes en cada reinicio. |
+
+La semilla deriva `K_L` con el mismo `derivarClaves` del navegador y calcula
+`h_L` con el mismo servicio y la misma regla de pimienta (`loadConfig`), de
+modo que los usuarios de demostración inician sesión si la semilla y el
+servidor se arrancan con la misma `LOGIN_PEPPER`. El script
+`scripts/derivar-clave-login.mjs` imprime `base64(K_L)` para probar con
+`curl` y para que el equipo compare su SHA3 con el del navegador.
+
+### Lo que este paso no protege
+
+- **`K_L` se puede reutilizar.** Quien capture `K_L` (rompiendo TLS o con
+  acceso al navegador) inicia sesión sin conocer la contraseña, aunque no
+  puede abrir `c_kU`. La mejora es el reto-respuesta firmado con `k_U`.
+- **`H(pw)` sigue sin sal y sin ser lento en el cliente.** Dos usuarios con la
+  misma contraseña tienen la misma `K_L` y la misma `K_D`; en el servidor la
+  sal hace que `h_L` difiera, pero para `K_D` queda pendiente `H(pw ‖ email)`
+  o una KDF lenta en el navegador.
+- **La pimienta de desarrollo es pública.** Sin `LOGIN_PEPPER` está en el
+  código y no aporta secreto; en una instalación real es obligatoria. Rotarla
+  invalida todos los hashes.
+- **Sin límite de intentos.** La KDF lenta encarece la fuerza bruta en línea,
+  pero no la impide.
+- **Las claves del usuario todavía no se usan en el login.** El servidor no
+  devuelve `VI` ni `c_kU` y el navegador no abre `k_U`; es el siguiente paso.
+- **Los usuarios creados antes de este paso no pueden iniciar sesión.** No
+  se pueden migrar, porque el servidor no debe calcular `K_L`; se vuelven a
+  crear.
+
 ## Trabajo futuro
 
 - Sustituir la firma provisional del token por la firma asimétrica del
   servidor (equipo).
 - Sustituir el SHA-256 provisional de `claves-usuario.js` por SHA3-256
   (equipo) y considerar una derivación lenta de `K_D` en el cliente.
-- Usar `K_L` en el login (paso 8): el navegador deja de enviar la contraseña y
-  el servidor guarda solo `h_L = KDF(K_L ‖ pimienta, sal)`.
+- Elegir la KDF definitiva de la clave de login y medir sus parámetros
+  (equipo); versionar la pimienta por usuario para poder rotarla.
+- Devolver `K_U`, `VI` y `c_kU` en el login y abrir `k_U` con `K_D` en el
+  navegador, para poder cifrar las tarjetas.
 - Revocar o renovar los tokens, para poder cerrar sesión en el servidor.
 - Autenticación mutua TLS entre el proxy de Vite y la API, con el
   certificado del cliente (descartada por ahora; se puede retomar).
 - Cifrar las claves privadas de los certificados con una frase de paso y
   añadir las cabeceras de seguridad (HSTS, CSP…).
-- Almacenar las contraseñas con una función de hash adecuada para contraseñas,
-  con sal (la librería concreta está pendiente de decidir; ver
-  [Stack tecnológico](stack-tecnologico.md)), en lugar de en texto claro.
 - Decidir si la sesión debe sobrevivir a una recarga de la página (por
   ejemplo, pasando el token a una cookie `HttpOnly`, `Secure` y `SameSite`).
-- Responder con el mismo error y en un tiempo similar tanto si el email no
-  existe como si la contraseña es incorrecta.
 - Limitar los intentos de login fallidos para dificultar ataques de fuerza
   bruta.
 - Extender el control de acceso por rol a los endpoints que vengan (tarjetas,

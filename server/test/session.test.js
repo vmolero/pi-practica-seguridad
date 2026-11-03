@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { sessionUserFromClaims, toSessionClaims } from '../src/domain/session.js';
 
-const user = { id: 7, name: 'Ana', email: 'ana@empresa.com', password: 'secreta', isAdmin: 1 };
+const user = { id: 7, name: 'Ana', email: 'ana@empresa.com', loginKeySalt: 'c2Fs', loginKeyHash: 'aGFzaA==', isAdmin: 1 };
 const claims = { sub: '7', email: 'ana@empresa.com', name: 'Ana', isAdmin: true };
 
 describe('toSessionClaims', () => {
-  it('devuelve sub como texto, email, name e isAdmin booleano, sin contraseña', () => {
+  it('devuelve sub como texto, email, name e isAdmin booleano, sin sal ni hash', () => {
     assert.deepEqual(toSessionClaims(user), claims);
   });
 });

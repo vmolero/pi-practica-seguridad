@@ -1,14 +1,15 @@
 # Diagrama de secuencia: alta de usuario con cifrado
 
-> **Estado:** implantado en parte (paso 7). El navegador ya deriva `K_L` y
-> `K_D` de la contraseña, genera el par `(K_U, k_U)` y envía `K_U`, `VI` y
-> `c_kU`, que el servidor valida y guarda en `USER` (`publicKey`,
-> `privateKeyIv`, `encryptedPrivateKey`); está en
-> `client/src/security/claves-usuario.js`. **Provisional:** `H` es SHA-256
-> hasta que el equipo entregue SHA3-256. Sigue pendiente la parte de la clave
-> de login: hoy el alta (`POST /api/private/admin/users`) todavía envía y
-> guarda la contraseña en texto claro, en lugar de `K_L`, `sal` y `h_L`
-> (paso 8).
+> **Estado:** implantado (pasos 7 y 8). El navegador deriva `K_L` y `K_D` de
+> la contraseña, genera el par `(K_U, k_U)` y envía `K_L`, `K_U`, `VI` y
+> `c_kU` (`client/src/security/claves-usuario.js`); el servidor valida el
+> material, calcula `h_L = KDF(K_L ‖ pimienta, sal)` con una sal nueva
+> (`server/src/infrastructure/security/login-key-service.js`) y guarda en
+> `USER` `loginKeySalt`, `loginKeyHash`, `publicKey`, `privateKeyIv` y
+> `encryptedPrivateKey`. La contraseña ya no viaja ni se guarda.
+> **Provisional:** `H` es SHA-256 hasta que el equipo entregue SHA3-256, y la
+> `KDF` es scrypt (`N = 2^15`, `r = 8`, `p = 1`) hasta que el equipo elija la
+> definitiva.
 >
 > **Fuentes:** temas 1 a 4 de la asignatura (fundamentos, introducción a la
 > criptografía, cifrado en flujo y en bloque, y criptografía con teoría de

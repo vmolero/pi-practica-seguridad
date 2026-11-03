@@ -123,7 +123,7 @@ describe('cardRepository', () => {
       const card = await cards.createForOwner(adminId, CARD_DATA);
       await knex('USER_CARD').insert({ userId: employeeId, cardId: card.id, isOwner: false });
       const stranger = (await knex('USER').insert({
-        name: 'Otra', email: 'otra@empresa.com', password: 'inicial123', isAdmin: false,
+        name: 'Otra', email: 'otra@empresa.com', isAdmin: false,
       }).returning('id'))[0].id;
 
       for (const userId of [employeeId, stranger]) {

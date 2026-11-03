@@ -1,9 +1,8 @@
 import { createPublicKey } from 'node:crypto';
+import { parseLoginKey } from './login-request.js';
 
 const MAX_NAME_LENGTH = 100;
 const MAX_EMAIL_LENGTH = 254;
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 128;
 
 const MIN_RSA_MODULUS_BITS = 2048;
 const IV_LENGTH = 16;
@@ -12,7 +11,7 @@ const MIN_ENCRYPTED_KEY_LENGTH = 16;
 const MAX_ENCRYPTED_KEY_LENGTH = 4096;
 
 const CREATE_FIELDS = new Set([
-  'name', 'email', 'password', 'isAdmin', 'publicKey', 'encryptedPrivateKey', 'privateKeyIv',
+  'name', 'email', 'loginKey', 'isAdmin', 'publicKey', 'encryptedPrivateKey', 'privateKeyIv',
 ]);
 const RENAME_FIELDS = new Set(['name']);
 
@@ -39,12 +38,6 @@ function parseEmail(value) {
   if (email.length > MAX_EMAIL_LENGTH) return null;
   const parts = email.split('@');
   return parts.length === 2 && parts[0] && parts[1] ? email : null;
-}
-
-function isValidPassword(value) {
-  return typeof value === 'string'
-    && value.length >= MIN_PASSWORD_LENGTH
-    && value.length <= MAX_PASSWORD_LENGTH;
 }
 
 // Devuelve los bytes de un texto en base64 estándar bien formado, o null.
@@ -87,17 +80,20 @@ function parseEncryptedPrivateKey(value) {
 
 /**
  * Comprueba el cuerpo de un alta de usuario.
- * Devuelve { name, email, password, isAdmin, publicKey, encryptedPrivateKey,
+ * Devuelve { name, email, loginKey, isAdmin, publicKey, encryptedPrivateKey,
  * privateKeyIv } normalizado, o null si no es válido.
- * La contraseña se devuelve tal cual: distingue mayúsculas y espacios. Los
- * campos de clave se devuelven tal cual llegan (base64).
+ * La contraseña no viaja: llega la clave de login K_L (base64), que se
+ * devuelve como Uint8Array de 16 bytes. La longitud de la contraseña (8 a 128)
+ * la comprueba el cliente. Los campos de clave del usuario se devuelven tal
+ * cual llegan (base64).
  */
 export function parseCreateUserRequest(body) {
   if (!isPlainObject(body) || !hasOnlyFields(body, CREATE_FIELDS)) return null;
 
   const name = parseName(body.name);
   const email = parseEmail(body.email);
-  if (!name || !email || !isValidPassword(body.password)) return null;
+  const loginKey = parseLoginKey(body.loginKey);
+  if (!name || !email || !loginKey) return null;
 
   const isAdmin = body.isAdmin ?? false;
   if (typeof isAdmin !== 'boolean') return null;
@@ -107,7 +103,7 @@ export function parseCreateUserRequest(body) {
   const privateKeyIv = parsePrivateKeyIv(body.privateKeyIv);
   if (!publicKey || !encryptedPrivateKey || !privateKeyIv) return null;
 
-  return { name, email, password: body.password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv };
+  return { name, email, loginKey, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv };
 }
 
 /**

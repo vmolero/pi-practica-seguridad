@@ -97,7 +97,9 @@ volver a escribirla.
 
 ## Iniciar sesión
 
-1. Escribe tu email y tu contraseña.
+1. Escribe tu email y tu contraseña. La contraseña no sale de tu navegador:
+   de ella se obtiene una clave de acceso que es lo único que se envía al
+   servidor, y el servidor no la guarda ni puede recuperar la contraseña.
 2. Pulsa **Iniciar sesión**.
 3. Mientras se comprueban los datos, el botón cambia a **Iniciando sesión…** y
    los campos y el botón quedan deshabilitados.
@@ -122,8 +124,8 @@ En desarrollo existen estos usuarios de prueba:
 
 Estos usuarios solo existen en la base de datos de desarrollo. El empleado de
 prueba tiene ya una tarjeta de prueba (`•••• 1111`, caducidad 12/30).
-**Aviso:** en esta versión la contraseña y los datos de las tarjetas se envían
-y se guardan sin cifrar; no uses una contraseña ni una tarjeta reales.
+**Aviso:** en esta versión los datos de las tarjetas se guardan sin cifrar; no
+uses una tarjeta real.
 
 ## Cerrar sesión
 
@@ -165,7 +167,9 @@ usuario aparece como una tarjeta con los mismos datos.
 ### Dar de alta un usuario
 
 1. En *Dar de alta un usuario*, escribe el **nombre**, el **email** y una
-   **contraseña inicial** de al menos 8 caracteres.
+   **contraseña inicial** de entre 8 y 128 caracteres. Si no cumple la
+   longitud, el panel muestra *La contraseña debe tener entre 8 y 128
+   caracteres* y no envía nada.
 2. Repite la contraseña en **Repite la contraseña**. Si las dos no coinciden,
    el panel muestra *Las contraseñas no coinciden* y no da de alta a nadie.
 3. Marca **Administrador** si la nueva cuenta debe poder gestionar usuarios.
@@ -183,9 +187,11 @@ La contraseña sirve, además, para proteger las claves del usuario, así que lo
 ideal es que la escriba el propio usuario: déjale el teclado para los campos
 de contraseña.
 
-> **Provisional:** de momento la contraseña inicial la elige el gestor y se
-> guarda sin cifrar. Más adelante se sustituirá por una invitación en la que
-> cada empleado elige su propia contraseña.
+> **Provisional:** de momento la contraseña inicial la elige el gestor (o el
+> propio usuario, si le dejas el teclado). No se envía ni se guarda: el
+> servidor solo recibe una clave de acceso derivada de ella. Más adelante se
+> sustituirá por una invitación en la que cada empleado elige su propia
+> contraseña.
 
 ### Cambiar el nombre de un usuario
 

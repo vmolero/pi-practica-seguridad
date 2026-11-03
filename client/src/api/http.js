@@ -1,4 +1,4 @@
-import { clearToken, getToken } from './session.js';
+import { clearSession, getToken } from './session.js';
 
 export const SESSION_EXPIRED_MESSAGE = 'Tu sesión ha caducado. Vuelve a iniciar sesión.';
 
@@ -12,7 +12,7 @@ export class SessionExpiredError extends Error {
 
 /**
  * fetch para la sección privada de la API: añade `Authorization: Bearer <token>`
- * y, ante un 401, descarta el token y lanza SessionExpiredError.
+ * y, ante un 401, descarta la sesión (token y K_D) y lanza SessionExpiredError.
  */
 export async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers);
@@ -22,7 +22,7 @@ export async function apiFetch(path, options = {}) {
   const response = await fetch(path, { ...options, headers });
 
   if (response.status === 401) {
-    clearToken();
+    clearSession();
     throw new SessionExpiredError();
   }
 

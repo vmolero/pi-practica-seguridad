@@ -1,9 +1,14 @@
 # Diagrama de secuencia: inicio de sesión con cifrado
 
-> **Estado:** propuesta de diseño. Hoy el login (`POST /api/public/login`)
-> envía la contraseña y el servidor la compara en texto claro
-> (`server/src/application/auth-service.js`). Este documento describe cómo
-> debería ser el login cuando se implemente la capa de seguridad.
+> **Estado:** implantado en parte (paso 8). El login (`POST /api/public/login`)
+> ya recibe `{ email, loginKey }` con `K_L` en base64, y el servidor
+> (`server/src/application/auth-service.js`) recalcula
+> `KDF(K_L ‖ pimienta, sal)` y lo compara en tiempo constante con `h_L`,
+> usando una sal ficticia derivada del email cuando el usuario no existe. El
+> navegador guarda `K_D` en memoria durante la sesión. **Provisional:** `H` es
+> SHA-256 y la `KDF` es scrypt hasta que el equipo entregue SHA3-256 y la KDF
+> definitiva. Sigue pendiente la segunda parte: el servidor todavía no
+> devuelve `VI` ni `c_kU` en el login y el navegador no abre `k_U` con `K_D`.
 >
 > **Parte de los datos que deja el alta.** El flujo de alta y la notación
 > completa están en [diagrama-secuencia-alta-usuario.md](diagrama-secuencia-alta-usuario.md).

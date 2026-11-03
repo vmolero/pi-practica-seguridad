@@ -2,7 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generarClavesUsuario } from '../../client/src/security/claves-usuario.js';
+import { derivarClaves, generarClavesUsuario, toBase64 } from '../../client/src/security/claves-usuario.js';
 import { createDatabase } from '../src/infrastructure/database/knex.js';
 
 let testUserKeys;
@@ -15,6 +15,16 @@ let testUserKeys;
 export function getTestUserKeys(password = 'inicial123') {
   testUserKeys ??= generarClavesUsuario(password);
   return testUserKeys;
+}
+
+/**
+ * Clave de login K_L de una contraseña, en base64, tal como la envía el
+ * navegador (misma derivación que el cliente y la semilla).
+ */
+export async function loginKeyFor(password) {
+  const { K_L, K_D } = await derivarClaves(password);
+  K_D.fill(0);
+  return toBase64(K_L);
 }
 
 /** Clave pública RSA de 1024 bits (SPKI en base64): demasiado corta. */

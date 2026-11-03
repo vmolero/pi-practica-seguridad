@@ -5,17 +5,19 @@ import {
   parseRenameUserRequest,
   parseUserId,
 } from '../src/infrastructure/http/user-request.js';
-import { getTestUserKeys, weakPublicKey } from './helpers.js';
+import { getTestUserKeys, loginKeyFor, weakPublicKey } from './helpers.js';
 
 const KEYS = await getTestUserKeys();
-const VALID = { name: 'Ana Pérez', email: 'ana@empresa.com', password: 'inicial123', ...KEYS };
+const LOGIN_KEY = await loginKeyFor('inicial123');
+const VALID = { name: 'Ana Pérez', email: 'ana@empresa.com', loginKey: LOGIN_KEY, ...KEYS };
 
 describe('parseCreateUserRequest', () => {
-  it('normaliza nombre y email, pone isAdmin a false por defecto y conserva las claves', () => {
-    assert.deepEqual(
-      parseCreateUserRequest({ name: '  Ana Pérez ', email: ' Ana@Empresa.com ', password: ' Inicial123 ', ...KEYS }),
-      { name: 'Ana Pérez', email: 'ana@empresa.com', password: ' Inicial123 ', isAdmin: false, ...KEYS },
-    );
+  it('normaliza nombre y email, pone isAdmin a false por defecto y devuelve la clave de login en bytes', () => {
+    const result = parseCreateUserRequest({ name: '  Ana Pérez ', email: ' Ana@Empresa.com ', loginKey: LOGIN_KEY, ...KEYS });
+    assert.ok(result.loginKey instanceof Uint8Array);
+    assert.equal(Buffer.from(result.loginKey).toString('base64'), LOGIN_KEY);
+    const { loginKey: _loginKey, ...rest } = result;
+    assert.deepEqual(rest, { name: 'Ana Pérez', email: 'ana@empresa.com', isAdmin: false, ...KEYS });
   });
 
   it('acepta isAdmin booleano', () => {
@@ -29,7 +31,7 @@ describe('parseCreateUserRequest', () => {
   });
 
   it('rechaza si falta un campo obligatorio', () => {
-    for (const field of ['name', 'email', 'password', 'publicKey', 'encryptedPrivateKey', 'privateKeyIv']) {
+    for (const field of ['name', 'email', 'loginKey', 'publicKey', 'encryptedPrivateKey', 'privateKeyIv']) {
       const { [field]: _omitted, ...body } = VALID;
       assert.equal(parseCreateUserRequest(body), null, field);
     }
@@ -48,12 +50,16 @@ describe('parseCreateUserRequest', () => {
     assert.equal(parseCreateUserRequest({ ...VALID, email: `${'a'.repeat(250)}@e.es` }), null);
   });
 
-  it('valida la longitud de la contraseña', () => {
-    assert.equal(parseCreateUserRequest({ ...VALID, password: '1234567' }), null);
-    assert.equal(parseCreateUserRequest({ ...VALID, password: 'a'.repeat(129) }), null);
-    assert.equal(parseCreateUserRequest({ ...VALID, password: 12345678 }), null);
-    assert.ok(parseCreateUserRequest({ ...VALID, password: '12345678' }));
-    assert.ok(parseCreateUserRequest({ ...VALID, password: 'a'.repeat(128) }));
+  it('exige una clave de login de exactamente 16 bytes en base64', () => {
+    for (const loginKey of [Buffer.alloc(15, 1).toString('base64'), Buffer.alloc(17, 1).toString('base64'), 'x'.repeat(24), '', 42]) {
+      assert.equal(parseCreateUserRequest({ ...VALID, loginKey }), null, String(loginKey));
+    }
+  });
+
+  it('rechaza la contraseña: ya no viaja al servidor', () => {
+    assert.equal(parseCreateUserRequest({ ...VALID, password: 'inicial123' }), null);
+    const { loginKey: _loginKey, ...withPassword } = { ...VALID, password: 'inicial123' };
+    assert.equal(parseCreateUserRequest(withPassword), null);
   });
 
   it('exige una clave pública RSA SPKI de al menos 2048 bits', () => {

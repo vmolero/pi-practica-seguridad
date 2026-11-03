@@ -1,5 +1,6 @@
 // Usuario tal como lo guarda el repositorio:
-// { id, name, email, password, isAdmin }
+// { id, name, email, isAdmin, loginKeySalt, loginKeyHash, publicKey,
+//   encryptedPrivateKey, privateKeyIv }
 
 /**
  * Devuelve los datos del usuario que se pueden enviar al cliente.

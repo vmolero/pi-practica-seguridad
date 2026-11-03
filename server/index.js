@@ -8,6 +8,7 @@ import { createCardRepository } from './src/infrastructure/database/card-reposit
 import { createUserRepository } from './src/infrastructure/database/user-repository.js';
 import { createHttpsServer } from './src/infrastructure/http/https-server.js';
 import { TOKEN_ISSUER } from './src/infrastructure/security/issuer.js';
+import { createLoginKeyService } from './src/infrastructure/security/login-key-service.js';
 import { createTokenService } from './src/infrastructure/security/token-service.js';
 
 const config = loadConfig(process.env);
@@ -19,8 +20,9 @@ const tokenService = createTokenService({
   ttlSeconds: config.jwtTtlSeconds,
   issuer: TOKEN_ISSUER,
 });
-const authService = createAuthService({ userRepository, tokenService });
-const userAdminService = createUserAdminService({ userRepository });
+const loginKeyService = createLoginKeyService({ pepper: config.loginPepper });
+const authService = createAuthService({ userRepository, loginKeyService, tokenService });
+const userAdminService = createUserAdminService({ userRepository, loginKeyService });
 const cardService = createCardService({ cardRepository: createCardRepository(knex) });
 
 const app = createApp({ authService, tokenService, userAdminService, userRepository, cardService });

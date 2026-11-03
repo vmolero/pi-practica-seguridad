@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
+import { loginKeyFor } from './helpers.js';
 import { startTestServer } from './test-app.js';
 
 const CARDS_PATH = '/api/private/cards';
@@ -22,7 +23,7 @@ function createClient(server) {
     const response = await fetch(`${server.baseUrl}/api/public/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, loginKey: await loginKeyFor(password) }),
     });
     return (await response.json()).token;
   }

@@ -7,9 +7,12 @@ import {
   renameUser,
 } from '../api/admin-users.js';
 import { SessionExpiredError } from '../api/http.js';
-import { generarClavesUsuario } from '../security/claves-usuario.js';
+import { derivarClaves, generarClavesUsuario, toBase64 } from '../security/claves-usuario.js';
 
 const EMPTY_FORM = { name: '', email: '', password: '', passwordRepeat: '', isAdmin: false };
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
+export const PASSWORD_LENGTH_ERROR = `La contraseña debe tener entre ${MIN_PASSWORD_LENGTH} y ${MAX_PASSWORD_LENGTH} caracteres`;
 export const PASSWORD_MISMATCH = 'Las contraseñas no coinciden';
 
 /**
@@ -71,7 +74,12 @@ export default function UserAdminPanel({ currentEmail, onSessionExpired }) {
     event.preventDefault();
     if (creating) return;
     setAlert('');
-    // La repetición solo se comprueba aquí: no se genera nada ni se envía.
+    // La longitud y la repetición solo se comprueban aquí: la contraseña no
+    // viaja al servidor, así que no se genera nada ni se envía si fallan.
+    if (form.password.length < MIN_PASSWORD_LENGTH || form.password.length > MAX_PASSWORD_LENGTH) {
+      setAlert(PASSWORD_LENGTH_ERROR);
+      return;
+    }
     if (form.password !== form.passwordRepeat) {
       setAlert(PASSWORD_MISMATCH);
       return;
@@ -79,16 +87,22 @@ export default function UserAdminPanel({ currentEmail, onSessionExpired }) {
     setCreating(true);
     try {
       const { name, email, password, isAdmin } = form;
-      // Par RSA del usuario y clave privada cifrada con K_D (solo en el navegador).
+      // K_L viaja al servidor; K_D no sale del navegador. Par RSA del usuario
+      // y clave privada cifrada con K_D.
+      const { K_L, K_D } = await derivarClaves(password);
+      K_D.fill(0);
+      const loginKey = toBase64(K_L);
+      K_L.fill(0);
       const claves = await generarClavesUsuario(password);
-      const created = await createUser({ name, email, password, isAdmin, ...claves });
+      const created = await createUser({ name, email, loginKey, isAdmin, ...claves });
       setUsers((current) => [...current, created]);
       setForm(EMPTY_FORM);
     } catch (error) {
       // Se conservan los datos salvo las contraseñas.
-      setForm((current) => ({ ...current, password: '', passwordRepeat: '' }));
       handleError(error);
     } finally {
+      // Las contraseñas se vacían siempre tras enviar.
+      setForm((current) => ({ ...current, password: '', passwordRepeat: '' }));
       setCreating(false);
     }
   }
@@ -264,13 +278,13 @@ export default function UserAdminPanel({ currentEmail, onSessionExpired }) {
           <div className="field">
             <label htmlFor="new-user-password">Contraseña inicial</label>
             <input id="new-user-password" name="password" type="password" value={form.password}
-              onChange={updateField} minLength={8} maxLength={128} autoComplete="new-password"
+              onChange={updateField} maxLength={128} autoComplete="new-password"
               required disabled={creating} />
           </div>
           <div className="field">
             <label htmlFor="new-user-password-repeat">Repite la contraseña</label>
             <input id="new-user-password-repeat" name="passwordRepeat" type="password" value={form.passwordRepeat}
-              onChange={updateField} minLength={8} maxLength={128} autoComplete="new-password"
+              onChange={updateField} maxLength={128} autoComplete="new-password"
               required disabled={creating} />
           </div>
           <label className="checkbox-field">

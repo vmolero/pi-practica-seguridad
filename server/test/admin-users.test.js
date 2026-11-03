@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import { createCardRepository } from '../src/infrastructure/database/card-repository.js';
-import { getTestUserKeys, weakPublicKey } from './helpers.js';
+import { getTestUserKeys, loginKeyFor, weakPublicKey } from './helpers.js';
 import { startTestServer } from './test-app.js';
 
 const USERS_PATH = '/api/private/admin/users';
@@ -12,15 +12,18 @@ const DUPLICATE = { error: 'Ya existe un usuario con ese email' };
 const SELF_DELETION = { error: 'No puedes eliminar tu propia cuenta' };
 
 const KEYS = await getTestUserKeys();
-const NEW_USER = { name: 'Ana Pérez', email: ' Ana@Empresa.com ', password: 'inicial123', ...KEYS };
+const NEW_USER_LOGIN_KEY = await loginKeyFor('inicial123');
+const NEW_USER = { name: 'Ana Pérez', email: ' Ana@Empresa.com ', loginKey: NEW_USER_LOGIN_KEY, ...KEYS };
+const EMPLOYEE_LOGIN_KEY = await loginKeyFor('demo1234');
+const ADMIN_LOGIN_KEY = await loginKeyFor('admin1234');
 
 // Cliente HTTP mínimo contra un servidor de pruebas.
 function createClient(server) {
-  async function login(email, password) {
+  async function login(email, loginKey) {
     const response = await fetch(`${server.baseUrl}/api/public/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, loginKey }),
     });
     return { status: response.status, token: response.ok ? (await response.json()).token : null };
   }
@@ -39,8 +42,8 @@ function createClient(server) {
   return {
     login,
     request,
-    adminToken: async () => (await login('admin@empresa.com', 'admin1234')).token,
-    employeeToken: async () => (await login('empleado@empresa.com', 'demo1234')).token,
+    adminToken: async () => (await login('admin@empresa.com', ADMIN_LOGIN_KEY)).token,
+    employeeToken: async () => (await login('empleado@empresa.com', EMPLOYEE_LOGIN_KEY)).token,
   };
 }
 
@@ -93,7 +96,7 @@ describe('administración de usuarios: acceso', () => {
     );
   });
 
-  it('lista los usuarios ordenados por id y sin contraseña', async () => {
+  it('lista los usuarios ordenados por id, sin sal, hash ni claves', async () => {
     const response = await expectResponse(client.request('GET', USERS_PATH, { token: await client.adminToken() }), 200);
     const { users } = await response.json();
     assert.deepEqual(users.map((user) => user.email), ['empleado@empresa.com', 'admin@empresa.com']);
@@ -128,9 +131,14 @@ describe('administración de usuarios: operaciones', () => {
     assert.equal(created.email, 'ana@empresa.com');
     assert.equal(created.name, 'Ana Pérez');
     assert.equal(created.isAdmin, false);
-    assert.equal((await client.login('ana@empresa.com', 'inicial123')).status, 200);
-    // La fila guarda las claves tal como llegaron.
+    assert.equal((await client.login('ana@empresa.com', NEW_USER_LOGIN_KEY)).status, 200);
+    // La fila guarda sal y hash (nunca la clave de login) y las claves tal como llegaron.
     const row = await server.knex('USER').where({ email: 'ana@empresa.com' }).first();
+    assert.ok(row.loginKeySalt);
+    assert.ok(row.loginKeyHash);
+    assert.notEqual(row.loginKeyHash, NEW_USER_LOGIN_KEY);
+    assert.equal('password' in row, false);
+    assert.equal(JSON.stringify(created).includes('loginKey'), false);
     assert.equal(row.publicKey, KEYS.publicKey);
     assert.equal(row.encryptedPrivateKey, KEYS.encryptedPrivateKey);
     assert.equal(row.privateKeyIv, KEYS.privateKeyIv);
@@ -140,7 +148,7 @@ describe('administración de usuarios: operaciones', () => {
     const body = { ...NEW_USER, isAdmin: true };
     const created = await (await expectResponse(client.request('POST', USERS_PATH, { token: adminToken, body }), 201)).json();
     assert.equal(created.isAdmin, true);
-    const { token } = await client.login('ana@empresa.com', 'inicial123');
+    const { token } = await client.login('ana@empresa.com', NEW_USER_LOGIN_KEY);
     await expectResponse(client.request('GET', USERS_PATH, { token }), 200);
   });
 
@@ -151,18 +159,20 @@ describe('administración de usuarios: operaciones', () => {
   });
 
   it('responde 400 a altas no válidas sin crear nada', async () => {
-    const { password: _password, ...withoutPassword } = NEW_USER;
+    const { loginKey: _loginKey, ...withoutLoginKey } = NEW_USER;
     const { publicKey: _publicKey, ...withoutPublicKey } = NEW_USER;
     const { encryptedPrivateKey: _encrypted, ...withoutEncryptedKey } = NEW_USER;
     const { privateKeyIv: _iv, ...withoutIv } = NEW_USER;
     const invalidBodies = [
-      withoutPassword,
+      withoutLoginKey,
+      { ...withoutLoginKey, password: 'inicial123' }, // como en los pasos anteriores
+      { ...NEW_USER, password: 'inicial123' },
+      { ...NEW_USER, loginKey: Buffer.alloc(15, 1).toString('base64') },
       withoutPublicKey,
       withoutEncryptedKey,
       withoutIv,
       { ...NEW_USER, publicKey: weakPublicKey() },
       { ...NEW_USER, privateKeyIv: Buffer.alloc(12, 1).toString('base64') },
-      { ...NEW_USER, password: '1234567' },
       { ...NEW_USER, email: 'ana.empresa.com' },
       { ...NEW_USER, isAdmin: 'sí' },
       '{roto',
@@ -204,7 +214,7 @@ describe('administración de usuarios: operaciones', () => {
     const response = await expectResponse(client.request('DELETE', `${USERS_PATH}/${employee.id}`, { token: adminToken }), 204);
     assert.equal(await response.text(), '');
     assert.equal(await findUser('empleado@empresa.com'), undefined);
-    assert.equal((await client.login('empleado@empresa.com', 'demo1234')).status, 401);
+    assert.equal((await client.login('empleado@empresa.com', EMPLOYEE_LOGIN_KEY)).status, 401);
   });
 
   it('al eliminar un usuario borra sus tarjetas y no toca las de otros', async () => {
@@ -235,7 +245,7 @@ describe('administración de usuarios: operaciones', () => {
 
   it('responde 403 a un administrador eliminado cuyo token aún no ha caducado', async () => {
     await client.request('POST', USERS_PATH, { token: adminToken, body: { ...NEW_USER, isAdmin: true } });
-    const { token: secondAdminToken } = await client.login('ana@empresa.com', 'inicial123');
+    const { token: secondAdminToken } = await client.login('ana@empresa.com', NEW_USER_LOGIN_KEY);
     const admin = await findUser('admin@empresa.com');
 
     await expectResponse(client.request('DELETE', `${USERS_PATH}/${admin.id}`, { token: secondAdminToken }), 204);

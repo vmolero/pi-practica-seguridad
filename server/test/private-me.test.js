@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { createTokenService } from '../src/infrastructure/security/token-service.js';
 import { TOKEN_ISSUER } from '../src/infrastructure/security/issuer.js';
+import { loginKeyFor } from './helpers.js';
 import { createTestTokenService, startTestServer } from './test-app.js';
 
 const UNAUTHENTICATED = { error: 'No autenticado' };
@@ -24,7 +25,7 @@ describe('sección privada: GET /api/private/me', () => {
     const response = await fetch(`${server.baseUrl}/api/public/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, loginKey: await loginKeyFor(password) }),
     });
     return (await response.json()).token;
   }

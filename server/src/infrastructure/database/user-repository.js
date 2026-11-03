@@ -10,7 +10,7 @@ export function createUserRepository(knex) {
   return {
     async findByEmail(email) {
       return knex('USER')
-        .select('id', 'name', 'email', 'password', 'isAdmin')
+        .select('id', 'name', 'email', 'isAdmin', 'loginKeySalt', 'loginKeyHash')
         .where({ email })
         .first();
     },
@@ -27,13 +27,17 @@ export function createUserRepository(knex) {
     },
 
     /**
-     * Inserta un usuario con su material de claves y lo devuelve sin la
-     * contraseña ni las claves. Si el email ya existe, propaga el error de
-     * restricción única de SQLite.
+     * Inserta un usuario con la sal y el hash de su clave de login y su
+     * material de claves, y lo devuelve sin nada de eso. Si el email ya
+     * existe, propaga el error de restricción única de SQLite.
      */
-    async create({ name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv }) {
+    async create({
+      name, email, isAdmin, loginKeySalt, loginKeyHash, publicKey, encryptedPrivateKey, privateKeyIv,
+    }) {
       const [created] = await knex('USER')
-        .insert({ name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv })
+        .insert({
+          name, email, isAdmin, loginKeySalt, loginKeyHash, publicKey, encryptedPrivateKey, privateKeyIv,
+        })
         .returning(ADMIN_COLUMNS);
       return created;
     },

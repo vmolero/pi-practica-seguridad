@@ -8,7 +8,7 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 
 - **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión. Todos los usuarios tienen un dashboard **Mis tarjetas** para dar de alta, ver (enmascaradas), modificar y eliminar sus tarjetas. Los administradores ven además un panel para dar de alta, renombrar y eliminar usuarios. Al dar de alta, el formulario pide la contraseña dos veces y el navegador genera el par de claves RSA del nuevo usuario antes de enviar el alta.
 - **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), las tarjetas del propio usuario (`/api/private/cards`), una sección de administración de usuarios solo para administradores (`/api/private/admin/users`) y un endpoint de salud. Las tarjetas se guardan en `CARD` y la relación N:N `USER_CARD`.
-- **Seguridad:** el canal está cifrado: cliente y servidor solo atienden por **HTTPS**, cada uno con su propio certificado autofirmado generado con OpenSSL (ver [HTTPS y certificados](#https-y-certificados)). Por lo demás, casi ninguna todavía, a propósito. La contraseña **se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), los datos de las tarjetas, incluido el CVV, **se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Desde el paso 7, al dar de alta un usuario el navegador deriva de la contraseña una **clave de datos** `K_D` que nunca sale del navegador, genera el **par de claves RSA-OAEP de 2048 bits** del usuario y guarda en `USER` la clave pública y la clave privada cifrada con AES-128-CBC (`client/src/security/claves-usuario.js`). Mientras la contraseña se guarde en claro, esa protección es solo formal; el paso 8 la hará efectiva. **PROVISIONAL:** el resumen de la contraseña es SHA-256 hasta que el equipo entregue SHA3-256. Los pasos siguientes añadirán el resto de la criptografía.
+- **Seguridad:** el canal está cifrado: cliente y servidor solo atienden por **HTTPS**, cada uno con su propio certificado autofirmado generado con OpenSSL (ver [HTTPS y certificados](#https-y-certificados)). **La contraseña nunca sale del navegador** (paso 8): el cliente la resume (`h = H(pw)`) y la parte en dos mitades de 128 bits, la **clave de login** `K_L`, que es lo único que viaja al servidor, y la **clave de datos** `K_D`, que se queda en memoria del navegador. El servidor guarda de `K_L` solo una sal por usuario y un hash lento con pimienta (`h_L = scrypt(K_L ‖ pimienta, sal)`, **provisional** hasta que el equipo elija la KDF definitiva) y lo compara en tiempo constante; la pimienta se lee de `LOGIN_PEPPER`. Desde el paso 7, al dar de alta un usuario el navegador genera además el **par de claves RSA-OAEP de 2048 bits** del usuario y guarda en `USER` la clave pública y la clave privada cifrada con AES-128-CBC bajo `K_D` (`client/src/security/claves-usuario.js`), que el servidor no puede abrir. **PROVISIONAL:** el resumen de la contraseña es SHA-256 hasta que el equipo entregue SHA3-256. Lo que sigue sin proteger, a propósito: los datos de las tarjetas, incluido el CVV, **se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica.
 - **Planificación:** el trabajo se divide en pasos pequeños propuestos como cambios de OpenSpec. Consulta la sección [Planificación](#planificación).
 
 ## Estructura
@@ -38,7 +38,7 @@ npm run cert
 npm run dev
 ```
 
-La semilla (`db:seed`) genera las claves de los dos usuarios de prueba con el mismo módulo que usa el navegador, así que después de aplicar una migración nueva hay que volver a sembrar para que los usuarios tengan sus claves. Esa generación solo usa Web Crypto de Node (20 o posterior); está comprobada en Linux y queda pendiente comprobarla en Windows.
+La semilla (`db:seed`) deriva la clave de login y genera las claves de los dos usuarios de prueba con el mismo módulo que usa el navegador, así que después de aplicar una migración nueva hay que volver a sembrar para que los usuarios puedan iniciar sesión. La semilla y el servidor deben usar la misma pimienta: o los dos sin `LOGIN_PEPPER` (pimienta de desarrollo, con aviso en consola) o los dos con el mismo valor, por ejemplo `LOGIN_PEPPER=... npm run db:seed --workspace=server` y después `LOGIN_PEPPER=... npm run dev`; con pimientas distintas el login responde `401`. La derivación solo usa Web Crypto y `scrypt` de Node (20 o posterior); está comprobada en Linux y queda pendiente comprobarla en Windows.
 
 `npm run cert` genera los certificados autofirmados del cliente y del servidor (solo hace falta la primera vez). `npm run dev` arranca a la vez el cliente y el servidor. Abre el cliente en <https://localhost:5173>: la primera vez el navegador avisará de que el certificado no es de confianza (ver [HTTPS y certificados](#https-y-certificados)). El cliente envía las solicitudes a la API mediante el proxy de Vite; el servidor escucha en <https://localhost:3000>.
 
@@ -76,6 +76,7 @@ npm test --workspace=client  # Ejecuta los tests de la validación del cliente (
 | `PORT` | `3000` | Puerto del servidor |
 | `JWT_SECRET` | aleatorio por proceso | Secreto **provisional** para firmar los tokens. Mínimo 32 caracteres |
 | `JWT_TTL_SECONDS` | `3600` | Tiempo de vida del token de sesión, en segundos |
+| `LOGIN_PEPPER` | pimienta de desarrollo (pública) | Pimienta del hash de la clave de login. Mínimo 16 caracteres. Debe ser la misma para la semilla y el servidor |
 | `TLS_CERT_FILE` | `server/certs/cert.pem` | Certificado del servidor |
 | `TLS_KEY_FILE` | `server/certs/key.pem` | Clave privada del servidor |
 
@@ -87,11 +88,11 @@ JWT_SECRET=un-secreto-de-desarrollo-de-al-menos-32-caracteres JWT_TTL_SECONDS=10
 
 ## Vista de login
 
-La vista de login es un formulario con email y contraseña. El usuario se identifica con su email. Las llamadas de autenticación están encapsuladas en `client/src/api/auth.js`:
+La vista de login es un formulario con email y contraseña. El usuario se identifica con su email. La contraseña no sale del navegador. Las llamadas de autenticación están encapsuladas en `client/src/api/auth.js`:
 
-- `login({ email, password })` llama a `POST /api/public/login` y guarda el token de sesión **solo en memoria** (`client/src/api/session.js`).
+- `login({ email, password })` deriva `{ K_L, K_D }` de la contraseña con `derivarClaves` (`client/src/security/claves-usuario.js`), llama a `POST /api/public/login` con `{ email, loginKey }` (`K_L` en base64) y, si responde `200`, guarda el token de sesión y `K_D` **solo en memoria** (`client/src/api/session.js`). Con cualquier error descarta `K_D`.
 - `getCurrentUser()` llama a `GET /api/private/me` con el token mediante `apiFetch` (`client/src/api/http.js`), que añade la cabecera `Authorization: Bearer <token>`.
-- `logout()` descarta el token. No hay nada que cerrar en el servidor.
+- `logout()` descarta el token y borra `K_D`. No hay nada que cerrar en el servidor. Un `401` de la sección privada hace lo mismo.
 
 El seed crea dos usuarios de prueba para desarrollo:
 
@@ -119,10 +120,10 @@ El comportamiento de la pantalla se describe en el [manual de usuario](docs/prim
 
 La API del servidor incluye:
 
-- `POST /api/public/login`: comprueba un email y una contraseña. Envía `{ "email": "...", "password": "..." }`. Responde `200` con `{ "token", "user": { "email", "name", "isAdmin" } }`, donde `token` es el JWT de sesión, `401` con `{ "error": "Credenciales inválidas" }` (tanto si el email no existe como si la contraseña no coincide) o `400` si la petición está mal formada. **La contraseña se compara en texto claro.**
+- `POST /api/public/login`: comprueba un email y la clave de login. Envía `{ "email": "...", "loginKey": "..." }`, donde `loginKey` son los 16 bytes de `K_L` en base64 estándar (24 caracteres); la contraseña no viaja y un cuerpo con `password` o con cualquier otro campo responde `400`. Responde `200` con `{ "token", "user": { "email", "name", "isAdmin" } }`, donde `token` es el JWT de sesión, `401` con `{ "error": "Credenciales inválidas" }` (tanto si el email no existe como si la clave no coincide o el usuario no tiene clave de login, y en los tres casos tras calcular un hash) o `400` si la petición está mal formada. El servidor recalcula `scrypt(K_L ‖ pimienta, sal)` con la sal del usuario y lo compara con `loginKeyHash` en tiempo constante.
 - `GET /api/private/me`: devuelve `{ "email", "name", "isAdmin" }` del usuario del token. Requiere `Authorization: Bearer <token>`.
 - `GET /api/private/admin/users`: lista los usuarios. Responde `200` con `{ "users": [{ "id", "name", "email", "isAdmin" }] }` ordenados por `id`, nunca la contraseña.
-- `POST /api/private/admin/users`: da de alta un usuario. Envía `{ "name", "email", "password", "isAdmin", "publicKey", "encryptedPrivateKey", "privateKeyIv" }` (`isAdmin` es opcional y por defecto `false`). Las tres claves las genera el navegador y van en base64: `publicKey` es la clave pública RSA del usuario en formato SPKI, `encryptedPrivateKey` la clave privada (PKCS#8) cifrada con AES-128-CBC y `privateKeyIv` el vector de inicialización. Responde `201` con el usuario creado (nunca las claves), `409` con `{ "error": "Ya existe un usuario con ese email" }` o `400` con `{ "error": "Datos de usuario no válidos" }`. Reglas: nombre de 1 a 100 caracteres, email con una sola `@` y hasta 254 caracteres (se guarda en minúsculas y sin espacios), contraseña de 8 a 128 caracteres, clave pública RSA de al menos 2048 bits, vector de 16 bytes y clave cifrada de 16 a 4096 bytes en bloques de 16. **La contraseña inicial se guarda en texto claro.** `GET` tampoco devuelve nunca las claves.
+- `POST /api/private/admin/users`: da de alta un usuario. Envía `{ "name", "email", "loginKey", "isAdmin", "publicKey", "encryptedPrivateKey", "privateKeyIv" }` (`isAdmin` es opcional y por defecto `false`). `loginKey` es `K_L` en base64, como en el login: el servidor genera una sal de 16 bytes, guarda `loginKeySalt` y `loginKeyHash` y descarta `K_L`. Las tres claves las genera el navegador y van en base64: `publicKey` es la clave pública RSA del usuario en formato SPKI, `encryptedPrivateKey` la clave privada (PKCS#8) cifrada con AES-128-CBC y `privateKeyIv` el vector de inicialización. Responde `201` con el usuario creado (nunca las claves), `409` con `{ "error": "Ya existe un usuario con ese email" }` o `400` con `{ "error": "Datos de usuario no válidos" }`. Reglas: nombre de 1 a 100 caracteres, email con una sola `@` y hasta 254 caracteres (se guarda en minúsculas y sin espacios), `loginKey` de exactamente 16 bytes, clave pública RSA de al menos 2048 bits, vector de 16 bytes y clave cifrada de 16 a 4096 bytes en bloques de 16. La longitud de la contraseña (8 a 128 caracteres) la comprueba el cliente, porque el servidor ya no la ve; un cuerpo con `password` responde `400`. `GET` tampoco devuelve nunca la sal, el hash ni las claves.
 - `PATCH /api/private/admin/users/:id`: cambia el nombre. Envía `{ "name" }` y nada más. Cualquier otro campo da `400`. Responde `200` con el usuario actualizado, o `404` con `{ "error": "Usuario no encontrado" }`.
 - `DELETE /api/private/admin/users/:id`: elimina el usuario y responde `204`. Un administrador no puede eliminarse a sí mismo (`400` con `{ "error": "No puedes eliminar tu propia cuenta" }`). Si el usuario no existe responde `404`.
 - `GET /api/private/cards`: lista las tarjetas del usuario del token por orden de alta. Responde `200` con `{ "cards": [{ "id", "last4", "expiryMonth", "expiryYear", "createdAt" }] }`; nunca el número completo ni el CVV.
@@ -140,10 +141,11 @@ Las rutas de `/api/private/cards` solo operan sobre las tarjetas relacionadas co
 Ejemplo con `curl` (con el servidor en marcha y el seed aplicado, desde la raíz del proyecto). `--cacert` le dice a `curl` que confíe en el certificado autofirmado del servidor; sin él, rechaza la conexión, y por `http://` el servidor no responde:
 
 ```sh
-# 1. Inicia sesión y guarda el token
+# 1. Deriva la clave de login de la contraseña (lo que hace el navegador), inicia sesión y guarda el token
+LOGIN_KEY=$(node scripts/derivar-clave-login.mjs demo1234)
 TOKEN=$(curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/public/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"empleado@empresa.com","password":"demo1234"}' \
+  -d "{\"email\":\"empleado@empresa.com\",\"loginKey\":\"$LOGIN_KEY\"}" \
   | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).token))')
 
 # 2. Consulta la sección privada con el token → 200
@@ -156,13 +158,14 @@ curl -s --cacert server/certs/cert.pem -i https://localhost:3000/api/private/me
 Administración de usuarios con `curl`, como administrador:
 
 ```sh
+ADMIN_KEY=$(node scripts/derivar-clave-login.mjs admin1234)
 ADMIN_TOKEN=$(curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/public/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@empresa.com","password":"admin1234"}' \
+  -d "{\"email\":\"admin@empresa.com\",\"loginKey\":\"$ADMIN_KEY\"}" \
   | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).token))')
 
-# Alta de un empleado → 201. Las claves del usuario las genera el navegador;
-# para curl, el script de ayuda imprime el cuerpo completo con las claves generadas
+# Alta de un empleado → 201. La clave de login y las claves del usuario las genera
+# el navegador; para curl, el script de ayuda imprime el cuerpo completo
 BODY=$(node scripts/generar-claves-usuario.mjs inicial123 'Ana Pérez' ana@empresa.com)
 curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/private/admin/users \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
@@ -202,7 +205,7 @@ El servidor sigue una arquitectura por capas (dominio, aplicación e infraestruc
 
 La base de datos es el archivo `server/data/app.sqlite`, gestionado con Knex. El directorio `server/data/` se crea automáticamente cuando hace falta. El archivo de la base de datos está excluido de Git para no subir los datos locales.
 
-Las tablas `USER`, `CARD` y `USER_CARD` se administran mediante migraciones de Knex. El historial de migraciones también se guarda en esta base de datos, en las tablas `knex_migrations` y `knex_migrations_lock`.
+Las tablas `USER`, `CARD` y `USER_CARD` se administran mediante migraciones de Knex. `USER` guarda `id`, `name`, `email`, `isAdmin`, la sal y el hash de la clave de login (`loginKeySalt`, `loginKeyHash`) y las claves del usuario (`publicKey`, `encryptedPrivateKey`, `privateKeyIv`); no guarda la contraseña. El historial de migraciones también se guarda en esta base de datos, en las tablas `knex_migrations` y `knex_migrations_lock`.
 
 Iniciar el servidor no ejecuta automáticamente las migraciones pendientes; aplícalas con el comando `db:migrate`.
 
@@ -239,7 +242,7 @@ npm run db:seed --workspace=server
 
 `db:make` crea un archivo CommonJS en `server/migrations/`. Define el cambio de esquema en `up` y su reversión en `down`. Knex registra cada migración aplicada y no la vuelve a ejecutar.
 
-La primera migración crea la tabla `USER` con `name`, `email` e `isAdmin` (booleano, `false` por defecto). La segunda añade la clave primaria `id`, la columna `password` (en texto claro en este paso) y hace único el `email`, que se guarda siempre en minúsculas. La tercera borra la antigua tabla `notes`, y la cuarta crea `CARD` y `USER_CARD`. El seed está en `server/seeds/`, solo debe usarse en desarrollo y crea, además de los usuarios de prueba, una tarjeta de prueba del empleado (número de test de Visa `4111 1111 1111 1111`, caducidad 12/2030, CVV `123`). Para cambios posteriores, crea una migración nueva en vez de modificar una que ya se haya aplicado.
+La primera migración crea la tabla `USER` con `name`, `email` e `isAdmin` (booleano, `false` por defecto). La segunda añade la clave primaria `id`, la columna `password` (en texto claro en aquel paso) y hace único el `email`, que se guarda siempre en minúsculas. La tercera borra la antigua tabla `notes`, y la cuarta crea `CARD` y `USER_CARD`. La quinta añade a `USER` las claves del usuario (`publicKey`, `encryptedPrivateKey`, `privateKeyIv`, paso 7) y la sexta sustituye `password` por `loginKeySalt` y `loginKeyHash` (paso 8); los usuarios creados antes quedan con esas columnas a `NULL` y no pueden iniciar sesión, así que hay que volver a sembrar. Su `down` restaura `password` vacía. El seed está en `server/seeds/`, solo debe usarse en desarrollo y crea, además de los usuarios de prueba, una tarjeta de prueba del empleado (número de test de Visa `4111 1111 1111 1111`, caducidad 12/2030, CVV `123`). Para cambios posteriores, crea una migración nueva en vez de modificar una que ya se haya aplicado.
 
 ## Planificación
 

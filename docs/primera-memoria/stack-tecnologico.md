@@ -56,6 +56,14 @@ formatos `spki` y `pkcs8`. El mismo módulo corre en Node (semilla, pruebas y
 `globalThis.crypto`. En el servidor, `node:crypto` (`createPublicKey`) valida
 que la clave pública recibida sea RSA de al menos 2048 bits.
 
+**Ya en uso (paso 8, clave de login):** el navegador envía solo `K_L`, la
+primera mitad de `H(pw)`, y el servidor la guarda como
+`h_L = scrypt(K_L ‖ pimienta, sal)` (`server/src/infrastructure/security/login-key-service.js`,
+**provisional** hasta que el equipo elija la KDF definitiva) con
+`crypto.scrypt` (`N = 2^15`, `r = 8`, `p = 1`, 32 bytes), sal de `randomBytes`,
+comparación con `timingSafeEqual` y sal ficticia con `createHmac('sha256')`
+para los emails inexistentes. La pimienta se lee de `LOGIN_PEPPER`.
+
 #### Cliente (navegador): Web Crypto API (`crypto.subtle`)
 
 Está integrada en todos los navegadores modernos y no hay que instalar nada.
@@ -76,10 +84,10 @@ Por debajo usa la versión de OpenSSL que incluye Node.js.
 
 | Uso | Primitiva |
 |---|---|
-| Hash lento de la clave de login con sal y pimienta | `crypto.scrypt` (`crypto.argon2` solo existe a partir de Node 24) |
-| Resúmenes y HMAC | `createHash` y `createHmac` (incluido `sha3-256`) |
-| Comparación en tiempo constante | `timingSafeEqual` |
-| Valores aleatorios | `randomBytes` |
+| Hash lento de la clave de login con sal y pimienta (paso 8, en uso) | `crypto.scrypt` (`crypto.argon2` solo existe a partir de Node 24) |
+| Resúmenes y HMAC (sal ficticia del paso 8, en uso) | `createHash` y `createHmac` (incluido `sha3-256`) |
+| Comparación en tiempo constante (paso 8, en uso) | `timingSafeEqual` |
+| Valores aleatorios (sal del paso 8, en uso) | `randomBytes` |
 | Firma del servidor | `sign` y `verify` |
 
 #### Otras piezas que ya se usan

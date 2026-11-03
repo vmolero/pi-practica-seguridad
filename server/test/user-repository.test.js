@@ -4,7 +4,9 @@ import { createUserRepository } from '../src/infrastructure/database/user-reposi
 import { createTestDatabase, getTestUserKeys } from './helpers.js';
 
 const KEYS = await getTestUserKeys();
-const NEW_USER = { name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS };
+const NEW_USER = {
+  name: 'Ana', email: 'ana@empresa.com', isAdmin: false, loginKeySalt: 'c2FsLWRlLXBydWViYQ==', loginKeyHash: 'aGFzaC1kZS1wcnVlYmE=', ...KEYS,
+};
 
 describe('userRepository.findByEmail', () => {
   let database;
@@ -17,10 +19,12 @@ describe('userRepository.findByEmail', () => {
 
   after(() => database.cleanup());
 
-  it('devuelve el usuario sembrado con su contraseña y su rol', async () => {
+  it('devuelve el usuario sembrado con la sal y el hash de su clave de login y su rol', async () => {
     const user = await userRepository.findByEmail('admin@empresa.com');
     assert.equal(user.email, 'admin@empresa.com');
-    assert.equal(user.password, 'admin1234');
+    assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'isAdmin', 'loginKeyHash', 'loginKeySalt', 'name']);
+    assert.equal(Buffer.from(user.loginKeySalt, 'base64').length, 16);
+    assert.ok(user.loginKeyHash.length > 0);
     assert.equal(Boolean(user.isAdmin), true);
   });
 
@@ -56,14 +60,20 @@ describe('userRepository: administración de usuarios', () => {
     assert.equal(await userRepository.findById(9999), undefined);
   });
 
-  it('crea un usuario con sus claves y lo devuelve sin contraseña ni claves', async () => {
+  it('crea un usuario con su sal, su hash y sus claves, y lo devuelve sin nada de eso', async () => {
     const created = await userRepository.create(NEW_USER);
     assert.equal(created.email, 'ana@empresa.com');
     assert.equal(typeof created.id, 'number');
     assert.deepEqual(Object.keys(created).sort(), ['email', 'id', 'isAdmin', 'name']);
-    assert.equal((await userRepository.findByEmail('ana@empresa.com')).password, 'inicial123');
-    // La fila guarda exactamente los tres valores enviados.
+    // findByEmail devuelve la sal y el hash (para el login) y nada de contraseña.
+    const found = await userRepository.findByEmail('ana@empresa.com');
+    assert.equal(found.loginKeySalt, NEW_USER.loginKeySalt);
+    assert.equal(found.loginKeyHash, NEW_USER.loginKeyHash);
+    assert.equal('password' in found, false);
+    // La fila guarda exactamente los valores enviados.
     const row = await database.knex('USER').where({ email: 'ana@empresa.com' }).first();
+    assert.equal(row.loginKeySalt, NEW_USER.loginKeySalt);
+    assert.equal(row.loginKeyHash, NEW_USER.loginKeyHash);
     assert.equal(row.publicKey, KEYS.publicKey);
     assert.equal(row.encryptedPrivateKey, KEYS.encryptedPrivateKey);
     assert.equal(row.privateKeyIv, KEYS.privateKeyIv);

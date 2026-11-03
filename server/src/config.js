@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 const MIN_JWT_SECRET_LENGTH = 32;
 const DEFAULT_JWT_TTL_SECONDS = 3600;
+const MIN_LOGIN_PEPPER_LENGTH = 16;
+
+// Pimienta fija para desarrollo: no protege nada y se avisa de ello.
+export const DEVELOPMENT_LOGIN_PEPPER = 'pimienta-de-desarrollo-no-usar-en-produccion';
 
 // Certificado y clave que genera `npm run cert`, en server/certs/.
 const CERTS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'certs');
@@ -19,6 +23,7 @@ export function loadConfig(env = process.env, { warn = console.warn } = {}) {
     port: Number(env.PORT) || 3000,
     jwtSecret: loadJwtSecret(env.JWT_SECRET, warn),
     jwtTtlSeconds: loadJwtTtlSeconds(env.JWT_TTL_SECONDS),
+    loginPepper: loadLoginPepper(env.LOGIN_PEPPER, warn),
     tlsCertFile: env.TLS_CERT_FILE ? resolve(env.TLS_CERT_FILE) : DEFAULT_TLS_CERT_FILE,
     tlsKeyFile: env.TLS_KEY_FILE ? resolve(env.TLS_KEY_FILE) : DEFAULT_TLS_KEY_FILE,
   };
@@ -37,6 +42,24 @@ function loadJwtSecret(value, warn) {
 
   if (value.length < MIN_JWT_SECRET_LENGTH) {
     throw new Error(`JWT_SECRET debe tener al menos ${MIN_JWT_SECRET_LENGTH} caracteres`);
+  }
+
+  return value;
+}
+
+// Pimienta de la clave de login (paso 8): secreto común a todos los usuarios,
+// fuera de la base de datos. Semilla y servidor deben usar la misma.
+function loadLoginPepper(value, warn) {
+  if (value === undefined || value === '') {
+    warn(
+      'LOGIN_PEPPER no está definido: se usa la pimienta de desarrollo, '
+        + 'que es pública y no protege los hashes de la clave de login.',
+    );
+    return DEVELOPMENT_LOGIN_PEPPER;
+  }
+
+  if (value.length < MIN_LOGIN_PEPPER_LENGTH) {
+    throw new Error(`LOGIN_PEPPER debe tener al menos ${MIN_LOGIN_PEPPER_LENGTH} caracteres`);
   }
 
   return value;
