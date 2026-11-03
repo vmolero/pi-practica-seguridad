@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import { createCardRepository } from '../src/infrastructure/database/card-repository.js';
+import { getTestUserKeys, weakPublicKey } from './helpers.js';
 import { startTestServer } from './test-app.js';
 
 const USERS_PATH = '/api/private/admin/users';
@@ -10,7 +11,8 @@ const NOT_FOUND = { error: 'Usuario no encontrado' };
 const DUPLICATE = { error: 'Ya existe un usuario con ese email' };
 const SELF_DELETION = { error: 'No puedes eliminar tu propia cuenta' };
 
-const NEW_USER = { name: 'Ana Pérez', email: ' Ana@Empresa.com ', password: 'inicial123' };
+const KEYS = await getTestUserKeys();
+const NEW_USER = { name: 'Ana Pérez', email: ' Ana@Empresa.com ', password: 'inicial123', ...KEYS };
 
 // Cliente HTTP mínimo contra un servidor de pruebas.
 function createClient(server) {
@@ -127,6 +129,11 @@ describe('administración de usuarios: operaciones', () => {
     assert.equal(created.name, 'Ana Pérez');
     assert.equal(created.isAdmin, false);
     assert.equal((await client.login('ana@empresa.com', 'inicial123')).status, 200);
+    // La fila guarda las claves tal como llegaron.
+    const row = await server.knex('USER').where({ email: 'ana@empresa.com' }).first();
+    assert.equal(row.publicKey, KEYS.publicKey);
+    assert.equal(row.encryptedPrivateKey, KEYS.encryptedPrivateKey);
+    assert.equal(row.privateKeyIv, KEYS.privateKeyIv);
   });
 
   it('da de alta otro administrador que puede acceder al panel', async () => {
@@ -145,8 +152,16 @@ describe('administración de usuarios: operaciones', () => {
 
   it('responde 400 a altas no válidas sin crear nada', async () => {
     const { password: _password, ...withoutPassword } = NEW_USER;
+    const { publicKey: _publicKey, ...withoutPublicKey } = NEW_USER;
+    const { encryptedPrivateKey: _encrypted, ...withoutEncryptedKey } = NEW_USER;
+    const { privateKeyIv: _iv, ...withoutIv } = NEW_USER;
     const invalidBodies = [
       withoutPassword,
+      withoutPublicKey,
+      withoutEncryptedKey,
+      withoutIv,
+      { ...NEW_USER, publicKey: weakPublicKey() },
+      { ...NEW_USER, privateKeyIv: Buffer.alloc(12, 1).toString('base64') },
       { ...NEW_USER, password: '1234567' },
       { ...NEW_USER, email: 'ana.empresa.com' },
       { ...NEW_USER, isAdmin: 'sí' },

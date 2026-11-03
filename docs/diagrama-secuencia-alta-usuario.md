@@ -1,9 +1,14 @@
 # Diagrama de secuencia: alta de usuario con cifrado
 
-> **Estado:** propuesta de diseño. El proyecto todavía no cifra nada: hoy el
-> alta (`POST /api/private/admin/users`) guarda la contraseña en texto claro
-> (`server/src/application/user-admin-service.js`). Este documento describe
-> cómo debería ser el alta cuando se implemente la capa de seguridad.
+> **Estado:** implantado en parte (paso 7). El navegador ya deriva `K_L` y
+> `K_D` de la contraseña, genera el par `(K_U, k_U)` y envía `K_U`, `VI` y
+> `c_kU`, que el servidor valida y guarda en `USER` (`publicKey`,
+> `privateKeyIv`, `encryptedPrivateKey`); está en
+> `client/src/security/claves-usuario.js`. **Provisional:** `H` es SHA-256
+> hasta que el equipo entregue SHA3-256. Sigue pendiente la parte de la clave
+> de login: hoy el alta (`POST /api/private/admin/users`) todavía envía y
+> guarda la contraseña en texto claro, en lugar de `K_L`, `sal` y `h_L`
+> (paso 8).
 >
 > **Fuentes:** temas 1 a 4 de la asignatura (fundamentos, introducción a la
 > criptografía, cifrado en flujo y en bloque, y criptografía con teoría de

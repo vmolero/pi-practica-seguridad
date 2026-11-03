@@ -49,9 +49,14 @@ export async function listUsers() {
   return (await response.json()).users;
 }
 
-/** Da de alta un usuario y devuelve { id, name, email, isAdmin }. */
-export async function createUser({ name, email, password, isAdmin }) {
-  const response = await request(USERS_PATH, jsonOptions('POST', { name, email, password, isAdmin }));
+/**
+ * Da de alta un usuario y devuelve { id, name, email, isAdmin }.
+ * Las claves (publicKey, encryptedPrivateKey, privateKeyIv en base64) las
+ * genera el navegador con generarClavesUsuario antes de llamar.
+ */
+export async function createUser({ name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv }) {
+  const body = { name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv };
+  const response = await request(USERS_PATH, jsonOptions('POST', body));
   return response.json();
 }
 

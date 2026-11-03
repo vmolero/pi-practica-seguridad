@@ -3,6 +3,12 @@ import { beforeEach, describe, it } from 'node:test';
 import { DuplicateEmailError, SelfDeletionError, UserNotFoundError } from '../src/application/errors.js';
 import { createUserAdminService } from '../src/application/user-admin-service.js';
 
+const KEYS = {
+  publicKey: 'cGtleQ==',
+  encryptedPrivateKey: 'Y2lmcmFkYS1jbGF2ZS1wcml2',
+  privateKeyIv: 'dmVjdG9yLWluaWNpYWwtMTY=',
+};
+
 function createInMemoryUserRepository() {
   const users = [
     { id: 1, name: 'Empleado', email: 'empleado@empresa.com', password: 'demo1234', isAdmin: 0 },
@@ -41,6 +47,7 @@ function createInMemoryUserRepository() {
   };
 }
 
+// Ni la contraseña ni el material de claves salen del servicio.
 function assertNoPassword(user) {
   assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'isAdmin', 'name']);
 }
@@ -61,17 +68,22 @@ describe('userAdminService', () => {
     assert.equal(users[1].isAdmin, true);
   });
 
-  it('da de alta un usuario y lo devuelve sin contraseña', async () => {
+  it('da de alta un usuario con sus claves y lo devuelve sin contraseña ni claves', async () => {
     const created = await service.create({
-      name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false,
+      name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS,
     });
     assertNoPassword(created);
     assert.deepEqual(created, { id: 3, name: 'Ana', email: 'ana@empresa.com', isAdmin: false });
+    // El repositorio recibe los tres valores exactos.
+    const stored = repository.users.find((user) => user.email === 'ana@empresa.com');
+    assert.equal(stored.publicKey, KEYS.publicKey);
+    assert.equal(stored.encryptedPrivateKey, KEYS.encryptedPrivateKey);
+    assert.equal(stored.privateKeyIv, KEYS.privateKeyIv);
   });
 
   it('rechaza un email repetido', async () => {
     await assert.rejects(
-      service.create({ name: 'Otro', email: 'admin@empresa.com', password: 'inicial123', isAdmin: false }),
+      service.create({ name: 'Otro', email: 'admin@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS }),
       DuplicateEmailError,
     );
     assert.equal(repository.users.length, 2);
@@ -82,7 +94,7 @@ describe('userAdminService', () => {
       throw Object.assign(new Error('UNIQUE constraint failed'), { code: 'SQLITE_CONSTRAINT_UNIQUE' });
     };
     await assert.rejects(
-      service.create({ name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false }),
+      service.create({ name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS }),
       DuplicateEmailError,
     );
   });

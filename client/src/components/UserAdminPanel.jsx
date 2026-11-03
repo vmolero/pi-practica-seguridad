@@ -7,8 +7,10 @@ import {
   renameUser,
 } from '../api/admin-users.js';
 import { SessionExpiredError } from '../api/http.js';
+import { generarClavesUsuario } from '../security/claves-usuario.js';
 
-const EMPTY_FORM = { name: '', email: '', password: '', isAdmin: false };
+const EMPTY_FORM = { name: '', email: '', password: '', passwordRepeat: '', isAdmin: false };
+export const PASSWORD_MISMATCH = 'Las contraseñas no coinciden';
 
 /**
  * Panel de administración de usuarios. Solo se monta para administradores;
@@ -69,14 +71,22 @@ export default function UserAdminPanel({ currentEmail, onSessionExpired }) {
     event.preventDefault();
     if (creating) return;
     setAlert('');
+    // La repetición solo se comprueba aquí: no se genera nada ni se envía.
+    if (form.password !== form.passwordRepeat) {
+      setAlert(PASSWORD_MISMATCH);
+      return;
+    }
     setCreating(true);
     try {
-      const created = await createUser(form);
+      const { name, email, password, isAdmin } = form;
+      // Par RSA del usuario y clave privada cifrada con K_D (solo en el navegador).
+      const claves = await generarClavesUsuario(password);
+      const created = await createUser({ name, email, password, isAdmin, ...claves });
       setUsers((current) => [...current, created]);
       setForm(EMPTY_FORM);
     } catch (error) {
-      // Se conservan los datos salvo la contraseña.
-      setForm((current) => ({ ...current, password: '' }));
+      // Se conservan los datos salvo las contraseñas.
+      setForm((current) => ({ ...current, password: '', passwordRepeat: '' }));
       handleError(error);
     } finally {
       setCreating(false);
@@ -257,12 +267,18 @@ export default function UserAdminPanel({ currentEmail, onSessionExpired }) {
               onChange={updateField} minLength={8} maxLength={128} autoComplete="new-password"
               required disabled={creating} />
           </div>
+          <div className="field">
+            <label htmlFor="new-user-password-repeat">Repite la contraseña</label>
+            <input id="new-user-password-repeat" name="passwordRepeat" type="password" value={form.passwordRepeat}
+              onChange={updateField} minLength={8} maxLength={128} autoComplete="new-password"
+              required disabled={creating} />
+          </div>
           <label className="checkbox-field">
             <input type="checkbox" name="isAdmin" checked={form.isAdmin} onChange={updateField} disabled={creating} />
             Administrador
           </label>
           <button type="submit" disabled={creating}>
-            {creating ? 'Dando de alta…' : 'Dar de alta'}
+            {creating ? 'Generando claves…' : 'Dar de alta'}
           </button>
         </form>
       )}

@@ -1,9 +1,19 @@
+import { createPublicKey } from 'node:crypto';
+
 const MAX_NAME_LENGTH = 100;
 const MAX_EMAIL_LENGTH = 254;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
 
-const CREATE_FIELDS = new Set(['name', 'email', 'password', 'isAdmin']);
+const MIN_RSA_MODULUS_BITS = 2048;
+const IV_LENGTH = 16;
+const AES_BLOCK = 16;
+const MIN_ENCRYPTED_KEY_LENGTH = 16;
+const MAX_ENCRYPTED_KEY_LENGTH = 4096;
+
+const CREATE_FIELDS = new Set([
+  'name', 'email', 'password', 'isAdmin', 'publicKey', 'encryptedPrivateKey', 'privateKeyIv',
+]);
 const RENAME_FIELDS = new Set(['name']);
 
 function isPlainObject(value) {
@@ -37,10 +47,50 @@ function isValidPassword(value) {
     && value.length <= MAX_PASSWORD_LENGTH;
 }
 
+// Devuelve los bytes de un texto en base64 estándar bien formado, o null.
+function decodeBase64(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length % 4 !== 0) return null;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+  return Buffer.from(value, 'base64');
+}
+
+// K_U: clave pública SPKI (DER en base64) de tipo RSA con módulo de al menos
+// 2048 bits. Devuelve el valor tal cual o null.
+function parsePublicKey(value) {
+  const der = decodeBase64(value);
+  if (!der) return null;
+  try {
+    const key = createPublicKey({ key: der, format: 'der', type: 'spki' });
+    if (key.asymmetricKeyType !== 'rsa') return null;
+    if (key.asymmetricKeyDetails.modulusLength < MIN_RSA_MODULUS_BITS) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+// VI: exactamente 16 bytes.
+function parsePrivateKeyIv(value) {
+  const bytes = decodeBase64(value);
+  return bytes && bytes.length === IV_LENGTH ? value : null;
+}
+
+// c_kU: entre 16 y 4096 bytes, múltiplo del bloque de AES. El servidor no
+// puede comprobar nada más: no tiene K_D.
+function parseEncryptedPrivateKey(value) {
+  const bytes = decodeBase64(value);
+  if (!bytes) return null;
+  const { length } = bytes;
+  if (length < MIN_ENCRYPTED_KEY_LENGTH || length > MAX_ENCRYPTED_KEY_LENGTH || length % AES_BLOCK !== 0) return null;
+  return value;
+}
+
 /**
  * Comprueba el cuerpo de un alta de usuario.
- * Devuelve { name, email, password, isAdmin } normalizado, o null si no es válido.
- * La contraseña se devuelve tal cual: distingue mayúsculas y espacios.
+ * Devuelve { name, email, password, isAdmin, publicKey, encryptedPrivateKey,
+ * privateKeyIv } normalizado, o null si no es válido.
+ * La contraseña se devuelve tal cual: distingue mayúsculas y espacios. Los
+ * campos de clave se devuelven tal cual llegan (base64).
  */
 export function parseCreateUserRequest(body) {
   if (!isPlainObject(body) || !hasOnlyFields(body, CREATE_FIELDS)) return null;
@@ -52,7 +102,12 @@ export function parseCreateUserRequest(body) {
   const isAdmin = body.isAdmin ?? false;
   if (typeof isAdmin !== 'boolean') return null;
 
-  return { name, email, password: body.password, isAdmin };
+  const publicKey = parsePublicKey(body.publicKey);
+  const encryptedPrivateKey = parseEncryptedPrivateKey(body.encryptedPrivateKey);
+  const privateKeyIv = parsePrivateKeyIv(body.privateKeyIv);
+  if (!publicKey || !encryptedPrivateKey || !privateKeyIv) return null;
+
+  return { name, email, password: body.password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv };
 }
 
 /**

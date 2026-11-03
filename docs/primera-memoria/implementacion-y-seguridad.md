@@ -27,7 +27,8 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 .
 ├── package.json              # Define los workspaces y los scripts comunes (dev, build, cert...)
 ├── scripts/
-│   └── generar-certificados.mjs # npm run cert: certificados autofirmados con OpenSSL
+│   ├── generar-certificados.mjs # npm run cert: certificados autofirmados con OpenSSL
+│   └── generar-claves-usuario.mjs # Imprime las claves de un usuario para probar el alta con curl
 ├── client/                   # Frontend: Vite + React (JavaScript)
 │   ├── certs/                # Certificado y clave del cliente (no se versiona)
 │   ├── index.html            # Página única; monta la aplicación en #root
@@ -44,6 +45,8 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │       │   └── session.js    # Token de sesión, solo en memoria
 │       ├── validation/
 │       │   └── card.js       # validateCardForm(): mismas reglas que el servidor
+│       ├── security/
+│       │   └── claves-usuario.js # derivarClaves(), generarClavesUsuario(), abrirClavePrivada()
 │       └── components/
 │           ├── CardDashboard.jsx # Mis tarjetas: lista, alta, edición y borrado
 │           ├── LoginForm.jsx    # Formulario de email y contraseña
@@ -53,8 +56,8 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
     ├── certs/                # Certificado y clave del servidor (no se versiona)
     ├── index.js              # Arranque: construye las dependencias y escucha por HTTPS
     ├── knexfile.cjs          # Configuración de Knex; activa las claves foráneas
-    ├── migrations/           # Migraciones de Knex (USER, CARD, USER_CARD)
-    ├── seeds/                # Usuarios y tarjeta de prueba para desarrollo
+    ├── migrations/           # Migraciones de Knex (USER, CARD, USER_CARD, claves en USER)
+    ├── seeds/                # Usuarios (con sus claves) y tarjeta de prueba para desarrollo
     ├── test/                 # Tests con node:test
     └── src/
         ├── app.js            # createApp(): monta los routers y el manejo de errores
@@ -235,6 +238,9 @@ repositorio en memoria o una base de datos temporal sin tocar la real.
 | `email` | texto | Obligatorio, único, siempre en minúsculas |
 | `password` | texto | Obligatorio. **En texto claro** en este paso |
 | `isAdmin` | booleano | `true` para gestores; por defecto `false` |
+| `publicKey` | texto | Desde el paso 7: clave pública RSA del usuario (SPKI, base64) |
+| `encryptedPrivateKey` | texto | Desde el paso 7: clave privada cifrada con `K_D` (base64) |
+| `privateKeyIv` | texto | Desde el paso 7: vector de inicialización del cifrado anterior (base64) |
 
 El seed `server/seeds/01_usuarios_demo.cjs` crea un empleado y un
 administrador de prueba para desarrollo.
@@ -810,10 +816,150 @@ Contra un observador de la red, TLS da:
 - **Sin cabeceras de seguridad** (HSTS, CSP…). Quedan para otro paso de la
   fase 1.
 
+## Claves del usuario (paso 7)
+
+### Qué añade
+
+Hasta el paso 6, el alta guardaba el nombre, el email, la contraseña y el
+rol. Desde el paso 7, cuando un administrador da de alta a un usuario, el
+**navegador** genera el par de claves RSA del nuevo usuario y el servidor
+guarda, además, su clave pública y su clave privada cifrada con una clave que
+solo se obtiene de la contraseña. Es la primera pieza del esquema de
+[alta con cifrado](../diagrama-secuencia-alta-usuario.md): con ella se podrán
+cifrar las tarjetas para cada usuario (fase 1) y compartirlas (fase 2).
+
+Lo que hace el navegador al pulsar **Dar de alta**, en
+`client/src/security/claves-usuario.js`:
+
+1. Comprueba que las dos contraseñas coinciden. Si no, muestra
+   `Las contraseñas no coinciden` y no genera ni envía nada.
+2. `h = H(pw)`, de 256 bits, y lo parte en dos mitades de 128 bits:
+   `K_L = h[0..127]` (clave de login, que todavía no se usa) y
+   `K_D = h[128..255]` (clave de datos, que nunca sale del navegador).
+3. Genera el par RSA `(K_U, k_U)` de 2048 bits (`generarClavesUsuario`).
+4. `VI ← aleatorio de 128 bits` y `c_kU = E_K_D(k_U)` con AES-128-CBC, sobre
+   la clave privada en formato PKCS#8.
+5. Borra de la memoria `h`, `K_D` y `k_U`, y envía el alta con
+   `{ name, email, password, isAdmin, K_U, VI, c_kU }`, las tres últimas en
+   base64 (`publicKey`, `privateKeyIv`, `encryptedPrivateKey`).
+
+Mientras tanto el botón muestra «Generando claves…» (generar un par RSA de
+2048 bits tarda entre décimas de segundo y un par de segundos). Si el alta
+falla, el formulario conserva los datos salvo las dos contraseñas.
+
+El servidor valida el material, lo guarda tal cual y nunca lo devuelve: ni en
+la respuesta del alta ni en la lista de usuarios. La operación inversa,
+`abrirClavePrivada(pw, { encryptedPrivateKey, privateKeyIv })`, vuelve a
+derivar `K_D` de la contraseña y descifra `c_kU`; con una contraseña
+incorrecta el relleno o la estructura PKCS#8 no son válidos y falla con
+`ClavePrivadaError`. Todavía no la usa ninguna pantalla.
+
+### Notación
+
+Es la del [diagrama de alta](../diagrama-secuencia-alta-usuario.md), que
+sigue los temas 1 a 4.
+
+| Símbolo | Significado |
+|---|---|
+| `pw` | Contraseña que escribe el usuario. |
+| `H(x)` | Función resumen de 256 bits. Diseño: SHA3-256. **Provisional:** SHA-256. |
+| `K_L = h[0..127]` | Clave de login. Se calcula pero no se usa hasta el paso 8. |
+| `K_D = h[128..255]` | Clave de datos. Solo existe en el navegador. |
+| `K_U = (n, e)` / `k_U = d` | Par RSA del usuario: `E_K_U(m) = m^e mod n`, `D_k_U(c) = c^d mod n`. |
+| `E_k(m)` / `D_k(c)` | Cifrado y descifrado simétrico con AES-128. |
+| `VI` | Vector de inicialización aleatorio de 128 bits (modo CBC). |
+| `c_kU = E_K_D(k_U)` | Clave privada cifrada con AES-128-CBC y `VI`. |
+
+### Parámetros y justificación
+
+| Parámetro | Valor | Justificación |
+|---|---|---|
+| `H` | SHA-256 de Web Crypto (**provisional**) | El diseño pide SHA3-256, pero Web Crypto no tiene SHA-3. El equipo decide entre `@noble/hashes` o una implementación propia; la interfaz del módulo no cambia. |
+| Tamaño de `K_L` y `K_D` | 128 bits cada una | Un resumen de 256 bits se parte en dos, y AES-128 usa claves de 128 bits. |
+| Par del usuario | RSA-OAEP, `n` de 2048 bits, `e = 65537`, OAEP con SHA-256 | Es el RSA del tema 4. OAEP añade un relleno aleatorio que evita los ataques al RSA «de libro» (determinista). 2048 bits es el mínimo aceptado hoy, igual que en los certificados del paso 6. |
+| Cifrado de `k_U` | AES-128-CBC, `VI` aleatorio de 128 bits, relleno PKCS#7 | Cifrado en bloque del tema 3. Con un `VI` distinto en cada alta, dos usuarios con la misma contraseña obtienen `c_kU` distintos. El relleno lo añade y comprueba Web Crypto. |
+| Formatos | SPKI para `K_U`, PKCS#8 para `k_U`, todo en base64 | Formatos estándar que importan tanto Web Crypto como `node:crypto`, que es quien valida la clave pública en el servidor. |
+| Aleatoriedad | `crypto.getRandomValues` | Generador criptográfico del navegador, para `VI` y para los primos de RSA. |
+
+### Qué guarda la tabla y quién conoce cada dato
+
+| Dato | Quién lo conoce | Dónde se guarda |
+|---|---|---|
+| `pw` | El usuario. Hoy también el servidor (**provisional**). | Columna `password`, en claro. |
+| `K_L` | Nadie todavía: se calcula y se descarta. | No se guarda. |
+| `K_D` | Solo el navegador, mientras genera o abre la clave privada. | No se guarda. |
+| `K_U` | Pública: la verá cualquier usuario que quiera compartir una tarjeta. | `publicKey`. |
+| `k_U` | Solo el navegador, tras abrirla con `pw`. | Solo cifrada, en `encryptedPrivateKey`. |
+| `VI` | Pública. | `privateKeyIv`. |
+
+El `VI` puede guardarse en claro: en CBC debe ser impredecible, no secreto.
+Sin `K_D`, `c_kU` y `VI` no permiten recuperar `k_U`.
+
+### Validación en el servidor
+
+El servidor no tiene `K_D`, así que no puede comprobar que `c_kU` se abra;
+solo comprueba la forma del material, en `user-request.js`, antes de tocar la
+base de datos. Si algo falla, `400 { "error": "Datos de usuario no válidos" }`:
+
+- `publicKey`: base64 válido que `node:crypto` importa como clave pública
+  SPKI, de tipo RSA y con un módulo de al menos 2048 bits. Así no se guarda
+  una clave débil o basura que luego impediría compartir tarjetas con ese
+  usuario.
+- `privateKeyIv`: exactamente 16 bytes.
+- `encryptedPrivateKey`: de 16 a 4096 bytes y múltiplo de 16, como exige CBC.
+- Los tres campos son obligatorios y, como antes, no se admite ningún campo
+  no previsto.
+
+Los valores se insertan tal cual (base64) y no forman parte de las columnas
+que devuelven el alta y la lista (`ADMIN_COLUMNS`), así que ninguna respuesta
+expone las claves.
+
+### Semilla y pruebas
+
+La semilla `server/seeds/01_usuarios_demo.cjs` importa el módulo del cliente
+(solo usa Web Crypto, que Node 20+ también ofrece) y guarda las claves de los
+dos usuarios de prueba, generadas con sus contraseñas, de modo que
+`abrirClavePrivada` funciona con ellas. Por eso, tras migrar hay que volver a
+sembrar. El script `scripts/generar-claves-usuario.mjs` imprime el mismo
+material para probar el alta con `curl`.
+
+Las pruebas de contrato del módulo (`client/src/security/claves-usuario.test.js`)
+comprueban que `derivarClaves` es determinista y da dos mitades de 16 bytes
+distintas, que la clave privada abierta descifra lo que cifra la pública, que
+una contraseña incorrecta falla con `ClavePrivadaError` y que dos altas con la
+misma contraseña dan `VI` y claves distintos. Deben seguir pasando cuando el
+equipo cambie SHA-256 por SHA3-256. Las pruebas del servidor usan el mismo
+módulo para generar material válido y una clave RSA de 1024 bits para
+comprobar que se rechaza.
+
+### Lo que este paso no protege
+
+- **La contraseña sigue en claro en el servidor.** Quien lea la base de datos
+  puede derivar `K_D` de `password` y abrir `c_kU`. La garantía de que el
+  servidor no puede obtener la clave privada solo llega en el paso 8, cuando
+  el servidor deje de recibir `pw` y reciba únicamente `K_L`.
+- **`H(pw)` no lleva sal ni es lento.** Quien tenga `c_kU` y `VI` puede probar
+  contraseñas a toda velocidad hasta que una abra la clave privada. Lo
+  mitigan la longitud mínima de 8 caracteres y, en el futuro, una derivación
+  lenta en el cliente.
+- **CBC no autentica.** Si alguien altera `c_kU` o `VI` en la base de datos,
+  no se detecta: la clave simplemente no abre (o, con un `VI` alterado, abre
+  con el primer bloque corrompido). AES-GCM lo resolvería.
+- **Las claves todavía no se usan.** Ni las tarjetas se cifran con ellas ni
+  hay forma de cambiar la contraseña, que obligaría a volver a cifrar `k_U`
+  con la nueva `K_D`.
+- **El servidor no puede saber si la clave pública tiene dueño.** Un alta
+  hecha con `curl` puede enviar una `K_U` cuya `k_U` nadie tiene; con el
+  panel no ocurre.
+
 ## Trabajo futuro
 
 - Sustituir la firma provisional del token por la firma asimétrica del
   servidor (equipo).
+- Sustituir el SHA-256 provisional de `claves-usuario.js` por SHA3-256
+  (equipo) y considerar una derivación lenta de `K_D` en el cliente.
+- Usar `K_L` en el login (paso 8): el navegador deja de enviar la contraseña y
+  el servidor guarda solo `h_L = KDF(K_L ‖ pimienta, sal)`.
 - Revocar o renovar los tokens, para poder cerrar sesión en el servidor.
 - Autenticación mutua TLS entre el proxy de Vite y la API, con el
   certificado del cliente (descartada por ahora; se puede retomar).

@@ -27,12 +27,13 @@ export function createUserRepository(knex) {
     },
 
     /**
-     * Inserta un usuario y lo devuelve sin la contraseña. Si el email ya
-     * existe, propaga el error de restricción única de SQLite.
+     * Inserta un usuario con su material de claves y lo devuelve sin la
+     * contraseña ni las claves. Si el email ya existe, propaga el error de
+     * restricción única de SQLite.
      */
-    async create({ name, email, password, isAdmin }) {
+    async create({ name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv }) {
       const [created] = await knex('USER')
-        .insert({ name, email, password, isAdmin })
+        .insert({ name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv })
         .returning(ADMIN_COLUMNS);
       return created;
     },

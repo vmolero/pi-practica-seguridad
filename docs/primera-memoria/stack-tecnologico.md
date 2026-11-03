@@ -46,15 +46,27 @@ propone usar solo criptografía nativa, sin dependencias externas:
 algoritmos concretos los decide el equipo. Si cambian, estas tablas se
 actualizarán.
 
+**Ya en uso (paso 7, claves del usuario):** `client/src/security/claves-usuario.js`
+usa Web Crypto para el resumen de la contraseña (`SHA-256`, **provisional**
+hasta que el equipo entregue SHA3-256), el par de claves del usuario
+(`RSA-OAEP`, 2048 bits, SHA-256), el cifrado de la clave privada (`AES-CBC`
+con clave de 128 bits y VI aleatorio de `crypto.getRandomValues`) y los
+formatos `spki` y `pkcs8`. El mismo módulo corre en Node (semilla, pruebas y
+`scripts/generar-claves-usuario.mjs`), porque Node 20+ ofrece la misma API en
+`globalThis.crypto`. En el servidor, `node:crypto` (`createPublicKey`) valida
+que la clave pública recibida sea RSA de al menos 2048 bits.
+
 #### Cliente (navegador): Web Crypto API (`crypto.subtle`)
 
 Está integrada en todos los navegadores modernos y no hay que instalar nada.
 
 | Uso | Primitiva |
 |---|---|
+| Resumen de la contraseña (`H(pw)`, paso 7) | `SHA-256` (provisional; el diseño pide SHA3-256, ver decisiones abiertas) |
 | Derivar claves desde la contraseña | PBKDF2-HMAC-SHA-256 y HKDF |
-| Cifrar la clave privada y los datos de las tarjetas | AES-GCM (también hay AES-CBC) |
-| Par de claves del usuario y envoltura de la clave de cada tarjeta | RSA-OAEP |
+| Cifrar la clave privada (paso 7) | AES-CBC con clave de 128 bits y VI aleatorio |
+| Cifrar los datos de las tarjetas | AES-GCM (también hay AES-CBC) |
+| Par de claves del usuario (paso 7) y envoltura de la clave de cada tarjeta | RSA-OAEP (2048 bits, `e = 65537`, SHA-256) |
 | Firma (reto-respuesta) | ECDSA P-256 |
 | Valores aleatorios (VI, claves, sales) | `crypto.getRandomValues` |
 

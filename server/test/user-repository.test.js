@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { createUserRepository } from '../src/infrastructure/database/user-repository.js';
-import { createTestDatabase } from './helpers.js';
+import { createTestDatabase, getTestUserKeys } from './helpers.js';
+
+const KEYS = await getTestUserKeys();
+const NEW_USER = { name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false, ...KEYS };
 
 describe('userRepository.findByEmail', () => {
   let database;
@@ -53,19 +56,22 @@ describe('userRepository: administración de usuarios', () => {
     assert.equal(await userRepository.findById(9999), undefined);
   });
 
-  it('crea un usuario y lo devuelve sin contraseña', async () => {
-    const created = await userRepository.create({
-      name: 'Ana', email: 'ana@empresa.com', password: 'inicial123', isAdmin: false,
-    });
+  it('crea un usuario con sus claves y lo devuelve sin contraseña ni claves', async () => {
+    const created = await userRepository.create(NEW_USER);
     assert.equal(created.email, 'ana@empresa.com');
     assert.equal(typeof created.id, 'number');
-    assert.equal('password' in created, false);
+    assert.deepEqual(Object.keys(created).sort(), ['email', 'id', 'isAdmin', 'name']);
     assert.equal((await userRepository.findByEmail('ana@empresa.com')).password, 'inicial123');
+    // La fila guarda exactamente los tres valores enviados.
+    const row = await database.knex('USER').where({ email: 'ana@empresa.com' }).first();
+    assert.equal(row.publicKey, KEYS.publicKey);
+    assert.equal(row.encryptedPrivateKey, KEYS.encryptedPrivateKey);
+    assert.equal(row.privateKeyIv, KEYS.privateKeyIv);
   });
 
   it('rechaza un email repetido con un error de restricción', async () => {
     await assert.rejects(
-      userRepository.create({ name: 'Otra', email: 'admin@empresa.com', password: 'inicial123', isAdmin: false }),
+      userRepository.create({ ...NEW_USER, name: 'Otra', email: 'admin@empresa.com' }),
       (error) => String(error.code).startsWith('SQLITE_CONSTRAINT'),
     );
   });

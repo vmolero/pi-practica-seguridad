@@ -4,7 +4,8 @@ import { DuplicateEmailError, SelfDeletionError, UserNotFoundError } from './err
 /**
  * Servicio de administración de usuarios (panel del gestor).
  * Recibe un repositorio con list, findByEmail, findById, create, rename y
- * remove. Todo lo que devuelve pasa por toAdminUser: nunca la contraseña.
+ * remove. Todo lo que devuelve pasa por toAdminUser: nunca la contraseña ni
+ * el material de claves.
  */
 export function createUserAdminService({ userRepository }) {
   return {
@@ -13,16 +14,20 @@ export function createUserAdminService({ userRepository }) {
     },
 
     /**
-     * Da de alta un usuario. Lanza DuplicateEmailError si el email ya existe.
+     * Da de alta un usuario con su par de claves (publicKey en claro,
+     * encryptedPrivateKey y privateKeyIv tal como los cifró el navegador).
+     * Lanza DuplicateEmailError si el email ya existe.
      * Espera el email ya normalizado (sin espacios y en minúsculas).
      */
-    async create({ name, email, password, isAdmin }) {
+    async create({ name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv }) {
       if (await userRepository.findByEmail(email)) throw new DuplicateEmailError();
 
       // PROVISIONAL (paso 3): la contraseña inicial se guarda en texto claro,
       // igual que la compara el login. La capa de seguridad la sustituirá.
       try {
-        return toAdminUser(await userRepository.create({ name, email, password, isAdmin }));
+        return toAdminUser(await userRepository.create({
+          name, email, password, isAdmin, publicKey, encryptedPrivateKey, privateKeyIv,
+        }));
       } catch (error) {
         // Dos altas simultáneas con el mismo email: lo detecta el índice único.
         if (String(error.code).startsWith('SQLITE_CONSTRAINT')) throw new DuplicateEmailError();

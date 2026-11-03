@@ -6,9 +6,9 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 
 ## Estado actual
 
-- **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión. Todos los usuarios tienen un dashboard **Mis tarjetas** para dar de alta, ver (enmascaradas), modificar y eliminar sus tarjetas. Los administradores ven además un panel para dar de alta, renombrar y eliminar usuarios.
+- **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión. Todos los usuarios tienen un dashboard **Mis tarjetas** para dar de alta, ver (enmascaradas), modificar y eliminar sus tarjetas. Los administradores ven además un panel para dar de alta, renombrar y eliminar usuarios. Al dar de alta, el formulario pide la contraseña dos veces y el navegador genera el par de claves RSA del nuevo usuario antes de enviar el alta.
 - **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), las tarjetas del propio usuario (`/api/private/cards`), una sección de administración de usuarios solo para administradores (`/api/private/admin/users`) y un endpoint de salud. Las tarjetas se guardan en `CARD` y la relación N:N `USER_CARD`.
-- **Seguridad:** el canal está cifrado: cliente y servidor solo atienden por **HTTPS**, cada uno con su propio certificado autofirmado generado con OpenSSL (ver [HTTPS y certificados](#https-y-certificados)). Por lo demás, casi ninguna todavía, a propósito. La contraseña **se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), los datos de las tarjetas, incluido el CVV, **se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Los pasos siguientes añadirán la criptografía.
+- **Seguridad:** el canal está cifrado: cliente y servidor solo atienden por **HTTPS**, cada uno con su propio certificado autofirmado generado con OpenSSL (ver [HTTPS y certificados](#https-y-certificados)). Por lo demás, casi ninguna todavía, a propósito. La contraseña **se guarda en texto claro** (también la contraseña inicial que el administrador pone al dar de alta un usuario), los datos de las tarjetas, incluido el CVV, **se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica. Desde el paso 7, al dar de alta un usuario el navegador deriva de la contraseña una **clave de datos** `K_D` que nunca sale del navegador, genera el **par de claves RSA-OAEP de 2048 bits** del usuario y guarda en `USER` la clave pública y la clave privada cifrada con AES-128-CBC (`client/src/security/claves-usuario.js`). Mientras la contraseña se guarde en claro, esa protección es solo formal; el paso 8 la hará efectiva. **PROVISIONAL:** el resumen de la contraseña es SHA-256 hasta que el equipo entregue SHA3-256. Los pasos siguientes añadirán el resto de la criptografía.
 - **Planificación:** el trabajo se divide en pasos pequeños propuestos como cambios de OpenSpec. Consulta la sección [Planificación](#planificación).
 
 ## Estructura
@@ -37,6 +37,8 @@ npm run db:seed --workspace=server
 npm run cert
 npm run dev
 ```
+
+La semilla (`db:seed`) genera las claves de los dos usuarios de prueba con el mismo módulo que usa el navegador, así que después de aplicar una migración nueva hay que volver a sembrar para que los usuarios tengan sus claves. Esa generación solo usa Web Crypto de Node (20 o posterior); está comprobada en Linux y queda pendiente comprobarla en Windows.
 
 `npm run cert` genera los certificados autofirmados del cliente y del servidor (solo hace falta la primera vez). `npm run dev` arranca a la vez el cliente y el servidor. Abre el cliente en <https://localhost:5173>: la primera vez el navegador avisará de que el certificado no es de confianza (ver [HTTPS y certificados](#https-y-certificados)). El cliente envía las solicitudes a la API mediante el proxy de Vite; el servidor escucha en <https://localhost:3000>.
 
@@ -120,7 +122,7 @@ La API del servidor incluye:
 - `POST /api/public/login`: comprueba un email y una contraseña. Envía `{ "email": "...", "password": "..." }`. Responde `200` con `{ "token", "user": { "email", "name", "isAdmin" } }`, donde `token` es el JWT de sesión, `401` con `{ "error": "Credenciales inválidas" }` (tanto si el email no existe como si la contraseña no coincide) o `400` si la petición está mal formada. **La contraseña se compara en texto claro.**
 - `GET /api/private/me`: devuelve `{ "email", "name", "isAdmin" }` del usuario del token. Requiere `Authorization: Bearer <token>`.
 - `GET /api/private/admin/users`: lista los usuarios. Responde `200` con `{ "users": [{ "id", "name", "email", "isAdmin" }] }` ordenados por `id`, nunca la contraseña.
-- `POST /api/private/admin/users`: da de alta un usuario. Envía `{ "name", "email", "password", "isAdmin" }` (`isAdmin` es opcional y por defecto `false`). Responde `201` con el usuario creado, `409` con `{ "error": "Ya existe un usuario con ese email" }` o `400` con `{ "error": "Datos de usuario no válidos" }`. Reglas: nombre de 1 a 100 caracteres, email con una sola `@` y hasta 254 caracteres (se guarda en minúsculas y sin espacios), contraseña de 8 a 128 caracteres. **La contraseña inicial se guarda en texto claro.**
+- `POST /api/private/admin/users`: da de alta un usuario. Envía `{ "name", "email", "password", "isAdmin", "publicKey", "encryptedPrivateKey", "privateKeyIv" }` (`isAdmin` es opcional y por defecto `false`). Las tres claves las genera el navegador y van en base64: `publicKey` es la clave pública RSA del usuario en formato SPKI, `encryptedPrivateKey` la clave privada (PKCS#8) cifrada con AES-128-CBC y `privateKeyIv` el vector de inicialización. Responde `201` con el usuario creado (nunca las claves), `409` con `{ "error": "Ya existe un usuario con ese email" }` o `400` con `{ "error": "Datos de usuario no válidos" }`. Reglas: nombre de 1 a 100 caracteres, email con una sola `@` y hasta 254 caracteres (se guarda en minúsculas y sin espacios), contraseña de 8 a 128 caracteres, clave pública RSA de al menos 2048 bits, vector de 16 bytes y clave cifrada de 16 a 4096 bytes en bloques de 16. **La contraseña inicial se guarda en texto claro.** `GET` tampoco devuelve nunca las claves.
 - `PATCH /api/private/admin/users/:id`: cambia el nombre. Envía `{ "name" }` y nada más. Cualquier otro campo da `400`. Responde `200` con el usuario actualizado, o `404` con `{ "error": "Usuario no encontrado" }`.
 - `DELETE /api/private/admin/users/:id`: elimina el usuario y responde `204`. Un administrador no puede eliminarse a sí mismo (`400` con `{ "error": "No puedes eliminar tu propia cuenta" }`). Si el usuario no existe responde `404`.
 - `GET /api/private/cards`: lista las tarjetas del usuario del token por orden de alta. Responde `200` con `{ "cards": [{ "id", "last4", "expiryMonth", "expiryYear", "createdAt" }] }`; nunca el número completo ni el CVV.
@@ -159,10 +161,12 @@ ADMIN_TOKEN=$(curl -s --cacert server/certs/cert.pem -X POST https://localhost:3
   -d '{"email":"admin@empresa.com","password":"admin1234"}' \
   | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).token))')
 
-# Alta de un empleado → 201
+# Alta de un empleado → 201. Las claves del usuario las genera el navegador;
+# para curl, el script de ayuda imprime el cuerpo completo con las claves generadas
+BODY=$(node scripts/generar-claves-usuario.mjs inicial123 'Ana Pérez' ana@empresa.com)
 curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/private/admin/users \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"Ana Pérez","email":"ana@empresa.com","password":"inicial123"}'
+  -d "$BODY"
 
 # Lista de usuarios → 200
 curl -s --cacert server/certs/cert.pem https://localhost:3000/api/private/admin/users -H "Authorization: Bearer $ADMIN_TOKEN"

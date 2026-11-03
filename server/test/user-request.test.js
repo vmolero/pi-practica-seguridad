@@ -5,14 +5,16 @@ import {
   parseRenameUserRequest,
   parseUserId,
 } from '../src/infrastructure/http/user-request.js';
+import { getTestUserKeys, weakPublicKey } from './helpers.js';
 
-const VALID = { name: 'Ana Pérez', email: 'ana@empresa.com', password: 'inicial123' };
+const KEYS = await getTestUserKeys();
+const VALID = { name: 'Ana Pérez', email: 'ana@empresa.com', password: 'inicial123', ...KEYS };
 
 describe('parseCreateUserRequest', () => {
-  it('normaliza nombre y email y pone isAdmin a false por defecto', () => {
+  it('normaliza nombre y email, pone isAdmin a false por defecto y conserva las claves', () => {
     assert.deepEqual(
-      parseCreateUserRequest({ name: '  Ana Pérez ', email: ' Ana@Empresa.com ', password: ' Inicial123 ' }),
-      { name: 'Ana Pérez', email: 'ana@empresa.com', password: ' Inicial123 ', isAdmin: false },
+      parseCreateUserRequest({ name: '  Ana Pérez ', email: ' Ana@Empresa.com ', password: ' Inicial123 ', ...KEYS }),
+      { name: 'Ana Pérez', email: 'ana@empresa.com', password: ' Inicial123 ', isAdmin: false, ...KEYS },
     );
   });
 
@@ -27,7 +29,7 @@ describe('parseCreateUserRequest', () => {
   });
 
   it('rechaza si falta un campo obligatorio', () => {
-    for (const field of ['name', 'email', 'password']) {
+    for (const field of ['name', 'email', 'password', 'publicKey', 'encryptedPrivateKey', 'privateKeyIv']) {
       const { [field]: _omitted, ...body } = VALID;
       assert.equal(parseCreateUserRequest(body), null, field);
     }
@@ -52,6 +54,30 @@ describe('parseCreateUserRequest', () => {
     assert.equal(parseCreateUserRequest({ ...VALID, password: 12345678 }), null);
     assert.ok(parseCreateUserRequest({ ...VALID, password: '12345678' }));
     assert.ok(parseCreateUserRequest({ ...VALID, password: 'a'.repeat(128) }));
+  });
+
+  it('exige una clave pública RSA SPKI de al menos 2048 bits', () => {
+    for (const publicKey of [weakPublicKey(), 'no-es-base64!', 'AAAA', 42, '']) {
+      assert.equal(parseCreateUserRequest({ ...VALID, publicKey }), null, String(publicKey));
+    }
+  });
+
+  it('exige un VI de exactamente 16 bytes', () => {
+    const twelve = Buffer.alloc(12, 1).toString('base64');
+    const seventeen = Buffer.alloc(17, 1).toString('base64');
+    for (const privateKeyIv of [twelve, seventeen, 'AAAA=', 'A'.repeat(23), 42]) {
+      assert.equal(parseCreateUserRequest({ ...VALID, privateKeyIv }), null, String(privateKeyIv));
+    }
+    assert.ok(parseCreateUserRequest({ ...VALID, privateKeyIv: Buffer.alloc(16, 1).toString('base64') }));
+  });
+
+  it('exige una clave privada cifrada de 16 a 4096 bytes en bloques de 16', () => {
+    const bytes = (length) => Buffer.alloc(length, 1).toString('base64');
+    for (const encryptedPrivateKey of [bytes(0), bytes(15), bytes(17), bytes(4112), 'no-base64!', 42]) {
+      assert.equal(parseCreateUserRequest({ ...VALID, encryptedPrivateKey }), null, String(encryptedPrivateKey));
+    }
+    assert.ok(parseCreateUserRequest({ ...VALID, encryptedPrivateKey: bytes(16) }));
+    assert.ok(parseCreateUserRequest({ ...VALID, encryptedPrivateKey: bytes(4096) }));
   });
 
   it('rechaza isAdmin no booleano y campos extra', () => {

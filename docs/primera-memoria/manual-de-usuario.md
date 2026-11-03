@@ -166,12 +166,22 @@ usuario aparece como una tarjeta con los mismos datos.
 
 1. En *Dar de alta un usuario*, escribe el **nombre**, el **email** y una
    **contraseña inicial** de al menos 8 caracteres.
-2. Marca **Administrador** si la nueva cuenta debe poder gestionar usuarios.
-3. Pulsa **Dar de alta**.
+2. Repite la contraseña en **Repite la contraseña**. Si las dos no coinciden,
+   el panel muestra *Las contraseñas no coinciden* y no da de alta a nadie.
+3. Marca **Administrador** si la nueva cuenta debe poder gestionar usuarios.
+4. Pulsa **Dar de alta**. El botón pasa a *Generando claves…* durante uno o
+   dos segundos: el navegador está creando las claves con las que el nuevo
+   usuario cifrará sus datos. Espera a que termine.
 
 El usuario aparece en la tabla y el formulario se vacía. Comunícale su email y
 su contraseña inicial: con ellos ya puede iniciar sesión. El email se guarda
-en minúsculas, así que da igual cómo lo escribas.
+en minúsculas, así que da igual cómo lo escribas. Si el alta falla, el
+formulario conserva el nombre, el email y el rol, pero vacía las dos
+contraseñas.
+
+La contraseña sirve, además, para proteger las claves del usuario, así que lo
+ideal es que la escriba el propio usuario: déjale el teclado para los campos
+de contraseña.
 
 > **Provisional:** de momento la contraseña inicial la elige el gestor y se
 > guarda sin cifrar. Más adelante se sustituirá por una invitación en la que
