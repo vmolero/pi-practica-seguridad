@@ -38,14 +38,17 @@ rules:
   proposal:
     - Redacta la propuesta en español
     - Enumera qué secciones de README.md y de la memoria interna (docs/primera-memoria/*.md, p. ej. implementacion-y-seguridad.md, manual-de-usuario.md) se verán afectadas por el cambio
+    - Si el cambio añade, sustituye o retira código criptográfico (derivación de claves, hash, sal, pimienta, cifrado, firma, claves asimétricas, doble factor, reto-respuesta), indica que habrá que actualizar docs/criptografia-implementada.md, la página que explica en lenguaje sencillo qué criptografía hay en el código y la ilustra con un ejemplo de valores reales
   tasks:
     - Redacta las tareas en español, también las de documentación
     - Incluye siempre tareas explícitas para actualizar README.md y la memoria interna (docs/primera-memoria/*.md) de modo que reflejen el cambio
+    - Si el cambio toca código criptográfico, incluye una tarea [claude] para actualizar docs/criptografia-implementada.md en el mismo estilo (lenguaje sencillo y directo, tabla «Dónde está el código», pasos de cada operación, ejemplo con valores reales reproducibles con los scripts del repo, tabla «Qué es provisional y qué falta»)
 
 operations:
   apply:
     guidance:
       - No des el cambio por terminado sin haber actualizado README.md y la memoria interna (docs/primera-memoria/*.md) para que reflejen lo implementado
+      - Si el cambio toca código criptográfico, no lo des por terminado sin actualizar docs/criptografia-implementada.md; recalcula los valores del ejemplo con el código nuevo y comprueba que los comandos de «Reprodúcelo tú» funcionan
       - Escribe en español toda la documentación que crees o actualices (README.md, docs/, comentarios de documentación)
   archive:
     guidance:

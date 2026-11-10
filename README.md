@@ -265,3 +265,5 @@ La primera memoria de la práctica está en [`docs/primera-memoria/`](docs/prime
 - [Stack tecnológico](docs/primera-memoria/stack-tecnologico.md)
 - [Manual de usuario](docs/primera-memoria/manual-de-usuario.md)
 - [Implementación y seguridad](docs/primera-memoria/implementacion-y-seguridad.md)
+
+Para entender rápido qué criptografía tiene ya el código y verla con un ejemplo de valores reales: [la criptografía que ya está en el código](docs/criptografia-implementada.md). Se actualiza en cada cambio que toque código criptográfico (regla en `openspec/config.yaml`).
