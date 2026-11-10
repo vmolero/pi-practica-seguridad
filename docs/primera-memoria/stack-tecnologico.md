@@ -64,6 +64,11 @@ primera mitad de `H(pw)`, y el servidor la guarda como
 comparación con `timingSafeEqual` y sal ficticia con `createHmac('sha256')`
 para los emails inexistentes. La pimienta se lee de `LOGIN_PEPPER`.
 
+**Ya en uso (paso 9, apertura de la clave privada):** en el login el
+navegador descifra `c_kU` con `AES-CBC` de Web Crypto, importa el PKCS#8 como
+`RSA-OAEP` no exportable y comprueba el par cifrando y descifrando un valor
+aleatorio con `subtle.encrypt` / `subtle.decrypt`. Sin librerías nuevas.
+
 #### Cliente (navegador): Web Crypto API (`crypto.subtle`)
 
 Está integrada en todos los navegadores modernos y no hay que instalar nada.

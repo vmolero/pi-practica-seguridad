@@ -228,7 +228,9 @@ repositorio en memoria o una base de datos temporal sin tocar la real.
 4. Si las credenciales son válidas, el servicio firma el token de sesión
    (ver más abajo) y el router responde `200` con
    `{ "token", "user": toPublicUser(user) }`. Si no, responde `401` con
-   `{ "error": "Credenciales inválidas" }`.
+   `{ "error": "Credenciales inválidas" }`. *(Desde el paso 9 la respuesta
+   `200` incluye también `keys: toUserKeys(user)`, el material de claves del
+   usuario; ver [paso 9](#apertura-de-la-clave-privada-en-el-login-paso-9).)*
 
 | Caso | Código | Cuerpo |
 | --- | --- | --- |
@@ -962,7 +964,8 @@ comprobar que se rechaza.
   con el primer bloque corrompido). AES-GCM lo resolvería.
 - **Las claves todavía no se usan.** Ni las tarjetas se cifran con ellas ni
   hay forma de cambiar la contraseña, que obligaría a volver a cifrar `k_U`
-  con la nueva `K_D`.
+  con la nueva `K_D`. *(Desde el paso 9 el navegador abre `k_U` en el login;
+  cifrar las tarjetas y cambiar la contraseña siguen pendientes.)*
 - **El servidor no puede saber si la clave pública tiene dueño.** Un alta
   hecha con `curl` puede enviar una `K_U` cuya `k_U` nadie tiene; con el
   panel no ocurre.
@@ -1032,7 +1035,7 @@ Es la de los diagramas de alta y de login (`docs/diagrama-secuencia-*.md`).
 4. Si la clave es correcta, se emite el token como hasta ahora. El cliente
    guarda el token y `K_D` en memoria (`session.js`); con cualquier error
    borra `K_D`. Cerrar sesión o recibir un `401` en la sección privada borra
-   las dos cosas.
+   las dos cosas. *(Desde el paso 9, `K_D` solo vive hasta abrir `k_U`.)*
 
 ### Quién conoce cada dato
 
@@ -1040,7 +1043,7 @@ Es la de los diagramas de alta y de login (`docs/diagrama-secuencia-*.md`).
 |---|---|---|
 | `pw` | Solo el usuario (y el gestor en el alta). | En ningún sitio. |
 | `K_L` | El navegador, mientras dura la petición; el servidor, mientras calcula `h_L` o `h'_L`. | En ningún sitio. |
-| `K_D` | Solo el navegador, en memoria, mientras dura la sesión. | En ningún sitio. |
+| `K_D` | Solo el navegador, en memoria, mientras dura la sesión *(desde el paso 9, solo hasta abrir `k_U`)*. | En ningún sitio. |
 | `sal` | Pública. | `loginKeySalt`. |
 | `pimienta` | Solo el servidor. | Configuración (`LOGIN_PEPPER`), fuera de la base de datos. |
 | `h_L` | Solo el servidor. | `loginKeyHash`. |
@@ -1090,9 +1093,83 @@ servidor se arrancan con la misma `LOGIN_PEPPER`. El script
   pero no la impide.
 - **Las claves del usuario todavía no se usan en el login.** El servidor no
   devuelve `VI` ni `c_kU` y el navegador no abre `k_U`; es el siguiente paso.
+  *(Resuelto en el paso 9.)*
 - **Los usuarios creados antes de este paso no pueden iniciar sesión.** No
   se pueden migrar, porque el servidor no debe calcular `K_L`; se vuelven a
   crear.
+
+## Apertura de la clave privada en el login (paso 9)
+
+### Qué añade
+
+El paso 8 dejaba `K_D` en memoria del navegador sin usarla. En este paso el
+servidor devuelve en el login el material de claves del usuario que guarda
+desde el paso 7 (`K_U`, `VI`, `c_kU`) y el navegador recupera su clave
+privada: `k_U = D_K_D(c_kU)`. Es la segunda mitad del diagrama
+`docs/diagrama-secuencia-login.md`, que queda implantado. El esquema de
+`USER`, la semilla, el alta y el servicio de clave de login no cambian.
+
+### Flujo del login (continuación del paso 8)
+
+Los pasos 1 a 3 son los del paso 8. Después:
+
+4. Con la clave de login verificada, `auth-service.login` devuelve
+   `{ token, user, keys }`, donde `keys = toUserKeys(user)` son `publicKey`,
+   `privateKeyIv` y `encryptedPrivateKey` tal como están en `USER` (base64),
+   o `null` si falta alguno. Es la única salida de esos tres valores: la API
+   de administración sigue sin devolverlos. `loginKeySalt` y `loginKeyHash`
+   no salen nunca.
+5. En el navegador (`auth.js`), con `K_D` todavía en memoria:
+   - `abrirClavePrivadaConKD(K_D, { encryptedPrivateKey, privateKeyIv })`:
+     AES-128-CBC inverso sobre `c_kU` y después importación del PKCS#8 como
+     `CryptoKey` RSA-OAEP **no exportable** con uso `decrypt`. Si `K_D` no es
+     la correcta falla el relleno PKCS#7 o la estructura PKCS#8.
+   - `importarClavePublica(publicKey)` → `K_U` como `CryptoKey` con uso
+     `encrypt`.
+   - `comprobarParDeClaves(K_U, k_U)`: `r` de 32 bytes aleatorios,
+     `D_k_U(E_K_U(r)) = r`. Cierra dos casos que el descifrado solo no cubre:
+     un `c_kU` que «se abre por casualidad» con una `K_D` equivocada (relleno
+     válido, improbable pero posible) y un servidor que mezcle las claves de
+     dos usuarios.
+   - Si todo va bien, guarda el token y `{ K_U, k_U }` en `session.js`.
+   - En cualquier otro caso (`keys` nulo, descifrado fallido o par que no se
+     corresponde), descarta el token sin usarlo y muestra
+     `No se ha podido abrir tu clave privada. Vuelve a intentarlo.`. No hay
+     nada que invalidar en el servidor: las sesiones no tienen estado.
+   - `K_D` se borra siempre, en un `finally`.
+6. La vista de sesión muestra la fila «Clave privada: Abierta en este
+   navegador». Cerrar sesión o recibir un `401` en la sección privada suelta
+   el token y las dos `CryptoKey`; al recargar la página se pierden igual.
+
+### Quién conoce cada dato
+
+| Dato | Quién lo conoce | Dónde se guarda |
+|---|---|---|
+| `K_D` | Solo el navegador, desde `derivarClaves` hasta que `k_U` está abierta y comprobada. | En ningún sitio. |
+| `K_U`, `VI`, `c_kU` | El servidor (los guarda) y el navegador del propio usuario (los recibe en el login). | `USER`. |
+| `k_U` | Solo el navegador, como `CryptoKey` no exportable, mientras dura la sesión. | En ningún sitio. |
+| `r` | Solo el navegador, un instante. | En ningún sitio. |
+
+Un volcado de la base de datos contiene `c_kU`, pero abrirlo exige `K_D`, que
+solo se obtiene de la contraseña, que el servidor nunca ve. Una `CryptoKey`
+no exportable no se puede leer desde JavaScript: solo se puede usar para
+descifrar mientras exista la referencia.
+
+### Lo que este paso no protege
+
+- **`c_kU` no tiene integridad.** CBC no detecta manipulaciones. Un servidor
+  malicioso puede devolver un `c_kU` alterado; lo peor que consigue es que la
+  apertura falle o que la comprobación del par devuelva `false`. Pero si
+  cambia también `K_U`, el usuario queda con un par que el servidor conoce.
+  La defensa es firmar `K_U` (firma de claves públicas, prevista en el
+  enunciado) y, para `c_kU`, AES-GCM o un MAC.
+- **`k_U` está expuesta mientras dura la sesión.** Una extensión maliciosa o
+  un XSS pueden descifrar con ella, aunque no exportarla. No hay CSP todavía.
+- **`k_U` todavía no se usa.** Las tarjetas siguen en claro: cifrarlas con una
+  clave AES por tarjeta envuelta con `K_U` es el siguiente paso.
+- **Un usuario sin claves no puede entrar.** Con `keys: null` el navegador no
+  inicia la sesión aunque la clave de login sea correcta. No existe ninguno
+  en la práctica (el alta exige las claves desde el paso 7).
 
 ## Trabajo futuro
 
@@ -1102,8 +1179,9 @@ servidor se arrancan con la misma `LOGIN_PEPPER`. El script
   (equipo) y considerar una derivación lenta de `K_D` en el cliente.
 - Elegir la KDF definitiva de la clave de login y medir sus parámetros
   (equipo); versionar la pimienta por usuario para poder rotarla.
-- Devolver `K_U`, `VI` y `c_kU` en el login y abrir `k_U` con `K_D` en el
-  navegador, para poder cifrar las tarjetas.
+- Cifrar las tarjetas en el navegador con una clave AES aleatoria por
+  tarjeta envuelta con `K_U`, y descifrarlas con `k_U`.
+- Firmar `K_U` y proteger la integridad de `c_kU` (AES-GCM o MAC).
 - Revocar o renovar los tokens, para poder cerrar sesión en el servidor.
 - Autenticación mutua TLS entre el proxy de Vite y la API, con el
   certificado del cliente (descartada por ahora; se puede retomar).

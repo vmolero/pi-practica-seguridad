@@ -92,6 +92,14 @@ Si no se puede contactar con el servidor o este falla, se muestra:
 
 > *No se ha podido iniciar sesión. Inténtalo de nuevo.*
 
+Si el servidor ha aceptado tus datos pero tu navegador no ha podido abrir tu
+clave privada, no se inicia la sesión y aparece:
+
+> *No se ha podido abrir tu clave privada. Vuelve a intentarlo.*
+
+Vuelve a intentarlo. Si se repite, avisa a tu administrador: tus claves
+guardadas pueden estar dañadas y hará falta volver a darte de alta.
+
 Después de cualquier intento fallido, el campo de contraseña se vacía y hay que
 volver a escribirla.
 
@@ -99,7 +107,9 @@ volver a escribirla.
 
 1. Escribe tu email y tu contraseña. La contraseña no sale de tu navegador:
    de ella se obtiene una clave de acceso que es lo único que se envía al
-   servidor, y el servidor no la guarda ni puede recuperar la contraseña.
+   servidor, y el servidor no la guarda ni puede recuperar la contraseña. De
+   la contraseña se obtiene también la clave con la que tu navegador abre tu
+   clave privada, que el servidor te devuelve cifrada y no puede leer.
 2. Pulsa **Iniciar sesión**.
 3. Mientras se comprueban los datos, el botón cambia a **Iniciando sesión…** y
    los campos y el botón quedan deshabilitados.
@@ -107,7 +117,10 @@ volver a escribirla.
    - el saludo **Hola de nuevo.** y el texto *Has iniciado sesión
      correctamente.*;
    - el panel **Tu cuenta — Sesión activa**, con el nombre del usuario en la
-     fila **Nombre** y su email en la fila **Usuario**. Estos datos los
+     fila **Nombre**, su email en la fila **Usuario** y la fila **Clave
+     privada: Abierta en este navegador**, que indica que tu clave privada
+     está lista para usarse (solo en este navegador y solo hasta que cierres
+     sesión o recargues la página). Estos datos los
      devuelve el servidor tras comprobar la sesión;
    - el botón **Cerrar sesión**;
    - debajo, el panel **Tu cartera — Mis tarjetas** (ver

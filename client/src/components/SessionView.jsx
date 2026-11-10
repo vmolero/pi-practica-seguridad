@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getCurrentUser } from '../api/auth.js';
 import { SessionExpiredError } from '../api/http.js';
+import { getUserKeys } from '../api/session.js';
 import CardDashboard from './CardDashboard.jsx';
 import UserAdminPanel from './UserAdminPanel.jsx';
 
@@ -74,6 +75,12 @@ export default function SessionView({ user, onLogout, onSessionExpired }) {
           <span className="status-label">Usuario</span>
           <output>{currentUser.email}</output>
         </div>
+        {getUserKeys() && (
+          <div className="status-row">
+            <span className="status-label">Clave privada</span>
+            <output>Abierta en este navegador</output>
+          </div>
+        )}
         <div className="form-alert" role="alert" aria-live="assertive">
           {loadError}
         </div>

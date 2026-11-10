@@ -31,12 +31,13 @@ contraseña ──H──▶ h (32 bytes) ──┬── h[0..15]  = K_L ──
 
 | Fichero | Qué hace | Cuándo se ejecuta |
 |---|---|---|
-| `client/src/security/claves-usuario.js` | `derivarClaves(pw)` → `{ K_L, K_D }`. `generarClavesUsuario(pw)` → par RSA y clave privada cifrada. `abrirClavePrivada(pw, …)` hace la inversa. | En el navegador, en el alta y en el login. También en Node (semilla y scripts). |
+| `client/src/security/claves-usuario.js` | `derivarClaves(pw)` → `{ K_L, K_D }`. `generarClavesUsuario(pw)` → par RSA y clave privada cifrada. `abrirClavePrivadaConKD(K_D, …)` hace la inversa (y `abrirClavePrivada(pw, …)` a partir de la contraseña). `comprobarParDeClaves(K_U, k_U)` verifica que la privada corresponde a la pública. | En el navegador, en el alta y en el login. También en Node (semilla y scripts). |
 | `server/src/infrastructure/security/login-key-service.js` | `newSalt()`, `hash(K_L, sal)`, `verify(K_L, sal, hash)`, `fakeSalt(email)`. | En el servidor, en el alta y en el login. |
 | `server/src/config.js` | Lee la pimienta de `LOGIN_PEPPER`. Sin ella usa una de desarrollo y avisa. | Al arrancar el servidor y la semilla. |
 | `server/src/application/user-admin-service.js` | Alta: pide una sal, calcula el hash y guarda sal y hash. | `POST /api/private/admin/users` |
 | `server/src/application/auth-service.js` | Login: recalcula el hash y lo compara. Si el email no existe, hace el mismo trabajo con una sal ficticia. | `POST /api/public/login` |
-| `client/src/api/auth.js` y `client/src/api/session.js` | Login desde el navegador: deriva las claves, envía `K_L`, guarda el token y `K_D` solo en memoria. | Formulario de login y cierre de sesión. |
+| `server/src/domain/user.js` | `toUserKeys(user)`: los tres valores de clave que se devuelven al propio usuario en el login, o `null`. | `POST /api/public/login` |
+| `client/src/api/auth.js` y `client/src/api/session.js` | Login desde el navegador: deriva las claves, envía `K_L`, abre `k_U` con `K_D`, comprueba el par y guarda el token, `K_U` y `k_U` solo en memoria. | Formulario de login y cierre de sesión. |
 | `client/src/components/UserAdminPanel.jsx` | Alta desde el panel: comprueba la contraseña, deriva `K_L`, genera las claves y envía todo sin la contraseña. | Formulario «Dar de alta un usuario». |
 | `server/seeds/01_usuarios_demo.cjs` | Crea los dos usuarios de prueba con el mismo código que el navegador. | `npm run db:seed --workspace=server` |
 
@@ -71,7 +72,7 @@ En el servidor:
 9. Guarda en `USER`: `loginKeySalt`, `loginKeyHash`, `publicKey`,
    `privateKeyIv`, `encryptedPrivateKey`. Descarta `K_L`.
 
-### Inicio de sesión (paso 8)
+### Inicio de sesión (pasos 8 y 9)
 
 En el navegador:
 
@@ -85,16 +86,24 @@ En el servidor:
    compara los 32 bytes con `timingSafeEqual` (tarda lo mismo acierte o no).
 5. Si no existe o no tiene hash: `verify(K_L, fakeSalt(email), HASH_FICTICIO)`.
    Hace el mismo trabajo para tardar lo mismo, y responde el mismo `401`.
-6. Si la clave es correcta, emite el token de sesión.
+6. Si la clave es correcta, emite el token de sesión y devuelve también las
+   claves guardadas del usuario: `keys = { publicKey, privateKeyIv, encryptedPrivateKey }`.
+   Es el único sitio donde salen del servidor.
 
 De vuelta en el navegador:
 
-7. Con `200`, guarda el token y `K_D` en memoria (`session.js`). Con cualquier
-   error, borra `K_D`. Cerrar sesión o recibir un `401` borra las dos cosas.
+7. `abrirClavePrivadaConKD(K_D, keys)`: descifra `c_kU` con AES-128-CBC y
+   `K_D` e importa el resultado como clave privada RSA **no exportable**.
+8. `comprobarParDeClaves(K_U, k_U)`: cifra 32 bytes aleatorios con la pública
+   y los descifra con la privada. Si no vuelve lo mismo, las claves no se
+   corresponden.
+9. Si todo va bien, guarda el token, `K_U` y `k_U` en memoria (`session.js`).
+   Si algo falla, descarta el token y muestra «No se ha podido abrir tu clave
+   privada. Vuelve a intentarlo.». En los dos casos borra `K_D`. Cerrar
+   sesión o recibir un `401` suelta el token y las claves.
 
-Hoy `K_D` se guarda pero todavía no se usa en el login: el siguiente paso es
-que el servidor devuelva `c_kU` y `VI` y el navegador abra `k_U` con `K_D`
-para cifrar las tarjetas.
+Con `k_U` abierta en el navegador ya se pueden cifrar las tarjetas; es el
+siguiente paso.
 
 ## Ejemplo con valores reales
 
@@ -152,6 +161,19 @@ abrirClavePrivada("otra",     { encryptedPrivateKey, privateKeyIv }) → ClavePr
 El servidor guarda las tres columnas, pero para abrir `c_kU` hace falta `K_D`,
 y `K_D` solo se obtiene de la contraseña, que el servidor nunca ve.
 
+**5. Apertura en el login** (paso 9), con la `K_D` de `demo1234` y las claves
+que devuelve `POST /api/public/login`:
+
+```
+k_U = abrirClavePrivadaConKD(K_D, { encryptedPrivateKey, privateKeyIv })  → CryptoKey privada, extractable = false
+K_U = importarClavePublica(publicKey)                                     → CryptoKey pública
+comprobarParDeClaves(K_U, k_U)                                            → true
+comprobarParDeClaves(K_U, privada de otro usuario)                        → false
+abrirClavePrivadaConKD(K_D equivocada, …)                                 → ClavePrivadaError
+```
+
+Tras esto el navegador borra `K_D`; solo quedan el token, `K_U` y `k_U`.
+
 ### Reprodúcelo tú
 
 Las dos mitades y la clave de login que envía el navegador:
@@ -165,6 +187,24 @@ El cuerpo completo de un alta, con las claves RSA generadas:
 
 ```bash
 node scripts/generar-claves-usuario.mjs demo1234 'Ana Pérez' ana@empresa.com
+```
+
+Apertura de la clave privada con `K_D` y comprobación del par, como hace el
+navegador en el login (desde `server/`, con los usuarios de la semilla):
+
+```bash
+cd server && node --input-type=module -e '
+import { derivarClaves, abrirClavePrivadaConKD, importarClavePublica, comprobarParDeClaves } from "../client/src/security/claves-usuario.js";
+import { createRequire } from "node:module";
+const db = createRequire(import.meta.url)("better-sqlite3")("data/app.sqlite", { readonly: true });
+const fila = db.prepare("select publicKey, privateKeyIv, encryptedPrivateKey from USER where email = ?").get("empleado@empresa.com");
+
+const { K_D } = await derivarClaves("demo1234");
+const k_U = await abrirClavePrivadaConKD(K_D, fila);
+const K_U = await importarClavePublica(fila.publicKey);
+console.log("exportable:", k_U.extractable, "| par correcto:", await comprobarParDeClaves(K_U, k_U));
+try { await abrirClavePrivadaConKD(new Uint8Array(16), fila); } catch (e) { console.log("K_D equivocada:", e.name); }
+'
 ```
 
 Sal, hash y verificación con el servicio del servidor (desde `server/`):
@@ -201,7 +241,9 @@ console.table(db.prepare("select email, loginKeySalt, loginKeyHash, privateKeyIv
 | `H` = SHA-256 | Provisional. El diseño dice SHA3-256. | Equipo |
 | `KDF` = scrypt con `N=2^15, r=8, p=1` | Provisional. El equipo elige la definitiva y mide los parámetros. | Equipo |
 | Pimienta | Sin `LOGIN_PEPPER` se usa una pública de desarrollo, con aviso. En producción es obligatoria (16 caracteres o más). | Quien despliegue |
-| Uso de `K_D` en el login | Pendiente: abrir `k_U` con `K_D` y cifrar las tarjetas con `K_U`. | Siguiente paso |
+| Uso de `K_D` en el login | Hecho (paso 9): el navegador abre `k_U` y la conserva como `CryptoKey` no exportable. | — |
+| Integridad de `c_kU` y firma de `K_U` | Pendiente: CBC no detecta cambios y un servidor malicioso podría sustituir el par. | Más adelante |
+| Cifrado de tarjetas con `K_U` / `k_U` | Pendiente: clave AES por tarjeta envuelta con `K_U`. | Siguiente paso |
 | Firma del token de sesión | Provisional HS256; falta la firma asimétrica del servidor. | Equipo |
 | Datos de las tarjetas | Siguen en claro. | Siguiente paso |
 

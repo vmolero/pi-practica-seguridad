@@ -34,17 +34,37 @@ describe('POST /api/public/login', () => {
     assert.deepEqual(await response.json(), body);
   }
 
-  it('responde 200 con el token y el empleado, sin sal ni hash', async () => {
+  it('responde 200 con el token, el empleado y sus claves, sin sal ni hash', async () => {
     const response = await postJson({ email: 'empleado@empresa.com', loginKey: EMPLOYEE_KEY });
     assert.equal(response.status, 200);
 
     const body = await response.json();
-    assert.deepEqual(Object.keys(body).sort(), ['token', 'user']);
+    assert.deepEqual(Object.keys(body).sort(), ['keys', 'token', 'user']);
     assert.equal(body.token.split('.').length, 3);
     assert.deepEqual(body.user, { email: 'empleado@empresa.com', name: 'Empleado de prueba', isAdmin: false });
+    // Las claves son exactamente las de la fila sembrada.
+    const row = await server.knex('USER').where({ email: 'empleado@empresa.com' }).first();
+    assert.deepEqual(body.keys, {
+      publicKey: row.publicKey, privateKeyIv: row.privateKeyIv, encryptedPrivateKey: row.encryptedPrivateKey,
+    });
     const serialized = JSON.stringify(body);
     assert.equal(serialized.includes('loginKey'), false);
     assert.equal(serialized.includes(EMPLOYEE_KEY), false);
+    assert.equal(serialized.includes(row.loginKeySalt), false);
+    assert.equal(serialized.includes(row.loginKeyHash), false);
+  });
+
+  it('responde 200 con keys null para un usuario con la clave privada cifrada a NULL', async () => {
+    await server.knex('USER').where({ email: 'admin@empresa.com' }).update({ encryptedPrivateKey: null });
+    try {
+      const response = await postJson({ email: 'admin@empresa.com', loginKey: ADMIN_KEY });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).keys, null);
+    } finally {
+      const { encryptedPrivateKey } = await server.knex('USER').where({ email: 'empleado@empresa.com' }).first();
+      // Restaura un valor no nulo (el del empleado sirve: solo importa que no sea NULL).
+      await server.knex('USER').where({ email: 'admin@empresa.com' }).update({ encryptedPrivateKey });
+    }
   });
 
   it('emite un token con los claims de sesión y sin la clave de login', async () => {
@@ -57,10 +77,13 @@ describe('POST /api/public/login', () => {
     assert.equal(JSON.stringify(claims).includes(EMPLOYEE_KEY), false);
   });
 
-  it('responde 200 con user.isAdmin true para un administrador', async () => {
+  it('responde 200 con user.isAdmin true y sus claves para un administrador', async () => {
     const response = await postJson({ email: 'admin@empresa.com', loginKey: ADMIN_KEY });
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).user.isAdmin, true);
+    const body = await response.json();
+    assert.equal(body.user.isAdmin, true);
+    const row = await server.knex('USER').where({ email: 'admin@empresa.com' }).first();
+    assert.equal(body.keys.publicKey, row.publicKey);
   });
 
   it('no distingue mayúsculas ni espacios en el email', async () => {
@@ -68,7 +91,7 @@ describe('POST /api/public/login', () => {
     assert.equal(response.status, 200);
   });
 
-  it('responde 401 ante una clave de login incorrecta', async () => {
+  it('responde 401 ante una clave de login incorrecta, sin claves en el cuerpo', async () => {
     await expectResponse(postJson({ email: 'empleado@empresa.com', loginKey: ADMIN_KEY }), 401, INVALID_CREDENTIALS);
   });
 

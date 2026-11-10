@@ -75,14 +75,20 @@ Teoría: explansión de clave, ecuaciones de recurrencia. Notacion matematica pa
 
 AES: nos dan la s-caja y preguntar que completemos algo en X iteración.
 
-Swift rows (muy tipico)
+Swift rows (muy tipico) 3.16
 
 Mixcolumns: require más operaciones matemáticas, (no suele salir)
 
 Tener claro conceptos cifradores cual es más conveniente en funcion de la situación.
 
-Examen:
+Examen: (3.20 salio en examen)
 2 teoría
 1 rc4
 1 calcular inverso con cifrador afin
 1 aes o similar
+
+
+Análisis de riesgos de riesgos y amenazas para la práctica.
+
+
+

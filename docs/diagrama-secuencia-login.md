@@ -1,14 +1,17 @@
 # Diagrama de secuencia: inicio de sesión con cifrado
 
-> **Estado:** implantado en parte (paso 8). El login (`POST /api/public/login`)
-> ya recibe `{ email, loginKey }` con `K_L` en base64, y el servidor
+> **Estado:** implantado (pasos 8 y 9). El login (`POST /api/public/login`)
+> recibe `{ email, loginKey }` con `K_L` en base64; el servidor
 > (`server/src/application/auth-service.js`) recalcula
-> `KDF(K_L ‖ pimienta, sal)` y lo compara en tiempo constante con `h_L`,
-> usando una sal ficticia derivada del email cuando el usuario no existe. El
-> navegador guarda `K_D` en memoria durante la sesión. **Provisional:** `H` es
-> SHA-256 y la `KDF` es scrypt hasta que el equipo entregue SHA3-256 y la KDF
-> definitiva. Sigue pendiente la segunda parte: el servidor todavía no
-> devuelve `VI` ni `c_kU` en el login y el navegador no abre `k_U` con `K_D`.
+> `KDF(K_L ‖ pimienta, sal)`, lo compara en tiempo constante con `h_L`, usa
+> una sal ficticia derivada del email cuando el usuario no existe, y responde
+> con el token y `keys = { publicKey: K_U, privateKeyIv: VI, encryptedPrivateKey: c_kU }`.
+> El navegador (`client/src/api/auth.js`) abre `k_U = D_K_D(c_kU)`,
+> comprueba `D_k_U(E_K_U(r)) = r`, guarda el token, `K_U` y `k_U` en memoria y
+> borra `K_D`. **Provisional:** `H` es SHA-256 y la `KDF` es scrypt hasta que
+> el equipo entregue SHA3-256 y la KDF definitiva. Lo que sigue pendiente es
+> usar `k_U` para descifrar datos: hoy las tarjetas todavía viajan y se
+> guardan en claro.
 >
 > **Parte de los datos que deja el alta.** El flujo de alta y la notación
 > completa están en [diagrama-secuencia-alta-usuario.md](diagrama-secuencia-alta-usuario.md).
@@ -111,7 +114,7 @@ sequenceDiagram
     S->>T: sign({ sub: id, email, name, isAdmin })
     T-->>S: JWT (firmado, con iss, iat y exp)
     S-->>I: { token: JWT, user, K_U, VI, c_kU }
-    I-->>C: 200 { token, user: { email, name, isAdmin }, K_U, VI, c_kU }
+    I-->>C: 200 { token, user: { email, name, isAdmin }, keys: { K_U, VI, c_kU } }
 
     rect rgba(255, 190, 110, 0.15)
     Note over C: Recuperación de la clave privada (solo en el navegador)

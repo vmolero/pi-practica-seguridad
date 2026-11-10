@@ -7,14 +7,19 @@ const EMPLOYEE_KEY = Uint8Array.from({ length: 16 }, (_, i) => i);
 const ADMIN_KEY = Uint8Array.from({ length: 16 }, (_, i) => 100 + i);
 const WRONG_KEY = new Uint8Array(16).fill(255);
 
+const EMPLOYEE_KEYS = { publicKey: 'K_U-empleado', privateKeyIv: 'VI-empleado', encryptedPrivateKey: 'c_kU-empleado' };
+
 const users = [
   {
     id: 1, name: 'Empleado', email: 'empleado@empresa.com', isAdmin: 0,
     loginKeySalt: 'sal-empleado', loginKeyHash: 'hash(0..15|sal-empleado)',
+    ...EMPLOYEE_KEYS,
   },
+  // Con clave de login pero sin claves de usuario (el esquema lo admite).
   {
     id: 2, name: 'Admin', email: 'admin@empresa.com', isAdmin: 1,
     loginKeySalt: 'sal-admin', loginKeyHash: 'hash(100..115|sal-admin)',
+    publicKey: null, privateKeyIv: null, encryptedPrivateKey: null,
   },
   // Creado antes del paso 8: sin clave de login.
   { id: 3, name: 'Antiguo', email: 'antiguo@empresa.com', isAdmin: 0, loginKeySalt: null, loginKeyHash: null },
@@ -74,12 +79,19 @@ describe('authService.login', () => {
     });
   });
 
-  it('devuelve el token y el usuario público si la clave de login es correcta', async () => {
+  it('devuelve el token, el usuario público y sus claves si la clave de login es correcta', async () => {
     const result = await authService.login({ email: 'empleado@empresa.com', loginKey: EMPLOYEE_KEY });
     assert.deepEqual(result, {
       token: 'token-de-1',
       user: { email: 'empleado@empresa.com', name: 'Empleado', isAdmin: false },
+      keys: EMPLOYEE_KEYS,
     });
+  });
+
+  it('devuelve keys null si el usuario no tiene claves guardadas', async () => {
+    const result = await authService.login({ email: 'admin@empresa.com', loginKey: ADMIN_KEY });
+    assert.equal(result.keys, null);
+    assert.equal(result.token, 'token-de-2');
   });
 
   it('verifica con la sal y el hash guardados del usuario', async () => {
@@ -98,15 +110,16 @@ describe('authService.login', () => {
   it('no incluye la clave de login, la sal ni el hash en lo que devuelve', async () => {
     const result = await authService.login({ email: 'empleado@empresa.com', loginKey: EMPLOYEE_KEY });
     assert.deepEqual(Object.keys(result.user).sort(), ['email', 'isAdmin', 'name']);
+    assert.deepEqual(Object.keys(result.keys).sort(), ['encryptedPrivateKey', 'privateKeyIv', 'publicKey']);
     const serialized = JSON.stringify(result);
     assert.equal(serialized.includes('sal-empleado'), false);
     assert.equal(serialized.includes('hash('), false);
   });
 
-  it('rechaza una clave de login incorrecta sin firmar ningún token', async () => {
+  it('rechaza una clave de login incorrecta sin firmar ningún token ni devolver claves', async () => {
     await assert.rejects(
       authService.login({ email: 'empleado@empresa.com', loginKey: WRONG_KEY }),
-      InvalidCredentialsError,
+      (error) => error instanceof InvalidCredentialsError && !('keys' in error),
     );
     assert.equal(signedClaims.length, 0);
   });

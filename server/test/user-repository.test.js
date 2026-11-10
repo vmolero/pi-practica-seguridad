@@ -19,12 +19,17 @@ describe('userRepository.findByEmail', () => {
 
   after(() => database.cleanup());
 
-  it('devuelve el usuario sembrado con la sal y el hash de su clave de login y su rol', async () => {
+  it('devuelve el usuario sembrado con la sal y el hash de su clave de login, sus claves y su rol', async () => {
     const user = await userRepository.findByEmail('admin@empresa.com');
     assert.equal(user.email, 'admin@empresa.com');
-    assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'isAdmin', 'loginKeyHash', 'loginKeySalt', 'name']);
+    assert.deepEqual(Object.keys(user).sort(), [
+      'email', 'encryptedPrivateKey', 'id', 'isAdmin', 'loginKeyHash', 'loginKeySalt', 'name', 'privateKeyIv', 'publicKey',
+    ]);
     assert.equal(Buffer.from(user.loginKeySalt, 'base64').length, 16);
     assert.ok(user.loginKeyHash.length > 0);
+    assert.equal(Buffer.from(user.privateKeyIv, 'base64').length, 16);
+    assert.ok(user.publicKey.length > 0);
+    assert.ok(user.encryptedPrivateKey.length > 0);
     assert.equal(Boolean(user.isAdmin), true);
   });
 
@@ -69,6 +74,9 @@ describe('userRepository: administración de usuarios', () => {
     const found = await userRepository.findByEmail('ana@empresa.com');
     assert.equal(found.loginKeySalt, NEW_USER.loginKeySalt);
     assert.equal(found.loginKeyHash, NEW_USER.loginKeyHash);
+    assert.equal(found.publicKey, KEYS.publicKey);
+    assert.equal(found.encryptedPrivateKey, KEYS.encryptedPrivateKey);
+    assert.equal(found.privateKeyIv, KEYS.privateKeyIv);
     assert.equal('password' in found, false);
     // La fila guarda exactamente los valores enviados.
     const row = await database.knex('USER').where({ email: 'ana@empresa.com' }).first();

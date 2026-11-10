@@ -1,5 +1,5 @@
 import { toSessionClaims } from '../domain/session.js';
-import { toPublicUser } from '../domain/user.js';
+import { toPublicUser, toUserKeys } from '../domain/user.js';
 import { InvalidCredentialsError } from './errors.js';
 
 const LOGIN_KEY_LENGTH = 16;
@@ -23,7 +23,8 @@ export function createAuthService({ userRepository, loginKeyService, tokenServic
   return {
     /**
      * Comprueba la clave de login K_L (Uint8Array de 16 bytes) y emite el
-     * token de sesión. Devuelve { token, user } o lanza
+     * token de sesión. Devuelve { token, user, keys }, donde keys es el
+     * material de claves del usuario (K_U, VI, c_kU) o null, o lanza
      * InvalidCredentialsError. K_L no se copia ni se registra.
      */
     async login({ email, loginKey }) {
@@ -41,6 +42,7 @@ export function createAuthService({ userRepository, loginKeyService, tokenServic
       return {
         token: await tokenService.sign(toSessionClaims(user)),
         user: toPublicUser(user),
+        keys: toUserKeys(user),
       };
     },
   };

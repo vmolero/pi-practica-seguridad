@@ -3,6 +3,8 @@ import { before, describe, it } from 'node:test';
 import {
   ClavePrivadaError,
   abrirClavePrivada,
+  abrirClavePrivadaConKD,
+  comprobarParDeClaves,
   derivarClaves,
   fromBase64,
   generarClavesUsuario,
@@ -59,6 +61,28 @@ describe('generarClavesUsuario y abrirClavePrivada', () => {
 
   it('con una contraseña incorrecta la apertura falla', async () => {
     await assert.rejects(abrirClavePrivada('otra-contraseña', claves), ClavePrivadaError);
+  });
+
+  it('se abre con K_D ya derivada, la clave no es exportable y el par se corresponde', async () => {
+    const { K_D } = await derivarClaves(PW);
+    const privateKey = await abrirClavePrivadaConKD(K_D, claves);
+    assert.equal(privateKey.extractable, false);
+    assert.deepEqual(privateKey.usages, ['decrypt']);
+    const publicKey = await importarClavePublica(claves.publicKey);
+    assert.equal(await comprobarParDeClaves(publicKey, privateKey), true);
+    // No borra K_D: es del llamador.
+    assert.notDeepEqual(K_D, new Uint8Array(16));
+  });
+
+  it('con una K_D incorrecta la apertura falla', async () => {
+    await assert.rejects(abrirClavePrivadaConKD(new Uint8Array(16).fill(7), claves), ClavePrivadaError);
+  });
+
+  it('comprobarParDeClaves es false, sin excepción, con la privada de otro par', async () => {
+    const otras = await generarClavesUsuario(PW);
+    const otraPrivada = await abrirClavePrivada(PW, otras);
+    const publicKey = await importarClavePublica(claves.publicKey);
+    assert.equal(await comprobarParDeClaves(publicKey, otraPrivada), false);
   });
 
   it('dos altas con la misma contraseña dan VI y claves distintos', async () => {

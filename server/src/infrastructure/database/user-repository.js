@@ -8,9 +8,17 @@ const ADMIN_COLUMNS = ['id', 'name', 'email', 'isAdmin'];
  */
 export function createUserRepository(knex) {
   return {
+    /**
+     * Para el login: trae la sal y el hash de la clave de login y el material
+     * de claves del usuario (K_U, VI, c_kU), que se devuelve al propio
+     * usuario una vez verificada su clave de login.
+     */
     async findByEmail(email) {
       return knex('USER')
-        .select('id', 'name', 'email', 'isAdmin', 'loginKeySalt', 'loginKeyHash')
+        .select(
+          'id', 'name', 'email', 'isAdmin', 'loginKeySalt', 'loginKeyHash',
+          'publicKey', 'encryptedPrivateKey', 'privateKeyIv',
+        )
         .where({ email })
         .first();
     },
