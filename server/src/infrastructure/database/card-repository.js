@@ -1,9 +1,36 @@
-import { randomUUID } from 'node:crypto';
-import { toCard } from '../../domain/card.js';
+import { ENCRYPTED_FIELDS, columnsOf, toCard } from '../../domain/card.js';
 
-const CARD_COLUMNS = ['CARD.id', 'number', 'expiryMonth', 'expiryYear', 'cvv', 'isOwner', 'CARD.createdAt', 'updatedAt'];
-const DATA_FIELDS = ['number', 'expiryMonth', 'expiryYear', 'cvv'];
+const CARD_COLUMNS = [
+  'CARD.id',
+  ...ENCRYPTED_FIELDS.flatMap((field) => Object.values(columnsOf(field))),
+  'isOwner',
+  'wrappedKey',
+  'CARD.createdAt',
+  'updatedAt',
+];
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
+
+/** La tarjeta ya existe (el id lo genera el cliente). */
+export class DuplicateCardError extends Error {
+  constructor() {
+    super('La tarjeta ya existe');
+    this.name = 'DuplicateCardError';
+  }
+}
+
+const isPrimaryKeyViolation = (error) => String(error.code) === 'SQLITE_CONSTRAINT_PRIMARYKEY';
+
+// Columnas de CARD a partir de { number?, expiry?, cvv? } como { iv, ciphertext }.
+function toColumns(values) {
+  const data = {};
+  for (const field of ENCRYPTED_FIELDS) {
+    if (values[field] === undefined) continue;
+    const columns = columnsOf(field);
+    data[columns.iv] = values[field].iv;
+    data[columns.ciphertext] = values[field].ciphertext;
+  }
+  return data;
+}
 
 // Identificadores de las tarjetas de las que `userId` es propietario.
 function ownedCardIds(db, userId) {
@@ -24,7 +51,8 @@ export function deleteCardsOwnedBy(db, userId) {
  * exige que el usuario sea el propietario: una tarjeta ajena se trata igual
  * que una inexistente. No hay ninguna operación para relacionar una tarjeta
  * existente con otro usuario (fase 1: un único usuario por tarjeta).
- * PROVISIONAL: los datos se guardan en texto claro hasta la fase 1.
+ * Los valores llegan y salen cifrados; la clave envuelta de cada usuario
+ * está en su fila de USER_CARD.
  */
 export function createCardRepository(knex) {
   function cardsOf(db, userId) {
@@ -54,31 +82,33 @@ export function createCardRepository(knex) {
     },
 
     /**
-     * Crea la tarjeta y su única relación, la del propietario, en una misma
-     * transacción. Devuelve la tarjeta creada.
+     * Crea la tarjeta con el id del cliente y su única relación, la del
+     * propietario con su clave envuelta, en una misma transacción. Devuelve
+     * la tarjeta creada; lanza DuplicateCardError si el id ya existe.
      */
-    async createForOwner(ownerId, { number, expiryMonth, expiryYear, cvv }) {
-      const id = randomUUID();
-      return knex.transaction(async (trx) => {
-        await trx('CARD').insert({ id, number, expiryMonth, expiryYear, cvv });
-        await trx('USER_CARD').insert({ userId: ownerId, cardId: id, isOwner: true });
-        return findForUser(id, ownerId, trx);
-      });
+    async createForOwner(ownerId, { id, wrappedKey, ...values }) {
+      try {
+        return await knex.transaction(async (trx) => {
+          await trx('CARD').insert({ id, ...toColumns(values) });
+          await trx('USER_CARD').insert({ userId: ownerId, cardId: id, isOwner: true, wrappedKey });
+          return findForUser(id, ownerId, trx);
+        });
+      } catch (error) {
+        if (isPrimaryKeyViolation(error)) throw new DuplicateCardError();
+        throw error;
+      }
     },
 
     /**
-     * Actualiza los campos presentes en `changes` y la fecha de modificación,
-     * solo si `ownerId` es el propietario. Devuelve la tarjeta actualizada o
-     * undefined.
+     * Sustituye los valores cifrados presentes en `changes` y la fecha de
+     * modificación, solo si `ownerId` es el propietario. La clave envuelta no
+     * cambia. Devuelve la tarjeta actualizada o undefined.
      */
     async updateForOwner(cardId, ownerId, changes) {
-      const data = Object.fromEntries(
-        DATA_FIELDS.filter((field) => changes[field] !== undefined).map((field) => [field, changes[field]]),
-      );
       const updated = await knex('CARD')
         .where('id', cardId)
         .whereIn('id', ownedCardIds(knex, ownerId))
-        .update({ ...data, updatedAt: knex.raw(NOW) });
+        .update({ ...toColumns(changes), updatedAt: knex.raw(NOW) });
       return updated > 0 ? findForUser(cardId, ownerId) : undefined;
     },
 

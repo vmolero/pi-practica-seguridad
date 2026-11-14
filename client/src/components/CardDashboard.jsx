@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { CardNotFoundError, createCard, deleteCard, listCards, updateCard } from '../api/cards.js';
+import { CARD_DAMAGED_MESSAGE, CardNotFoundError, createCard, deleteCard, listCards, updateCard } from '../api/cards.js';
 import { SessionExpiredError } from '../api/http.js';
 import { formatExpiry, validateCardForm } from '../validation/card.js';
 
 const EMPTY_FORM = { number: '', expiryMonth: '', expiryYear: '', cvv: '' };
 
 // Los datos de las tarjetas solo viven en el estado de React: nunca se
-// escriben en la consola ni en el almacenamiento del navegador.
+// escriben en la consola ni en el almacenamiento del navegador. Llegan
+// cifrados y cards.js los descifra; aquí solo hay resúmenes (últimos 4
+// dígitos y caducidad) o, si una tarjeta no se puede abrir, `damaged`.
 
 /**
  * Campos de una tarjeta, compartidos por el formulario de alta y el de
@@ -104,7 +106,7 @@ function CardFields({ idPrefix, values, errors, onChange, disabled, editing = fa
 /**
  * Dashboard de tarjetas del propio usuario: lista enmascarada, alta,
  * modificación y borrado. Lo ven todos los usuarios; el servidor solo
- * devuelve y deja cambiar las tarjetas propias.
+ * devuelve y deja cambiar las tarjetas propias, y nunca puede leerlas.
  */
 export default function CardDashboard({ onSessionExpired }) {
   const [cards, setCards] = useState([]);
@@ -212,7 +214,7 @@ export default function CardDashboard({ onSessionExpired }) {
 
     setBusyId(card.id);
     try {
-      const updated = await updateCard(card.id, data);
+      const updated = await updateCard(card, data);
       setCards((current) => current.map((candidate) => (candidate.id === updated.id ? updated : candidate)));
       setEditing(null);
     } catch (error) {
@@ -267,16 +269,22 @@ export default function CardDashboard({ onSessionExpired }) {
             const isEditing = editing?.id === card.id;
             const isConfirming = confirmingId === card.id;
             const busy = busyId === card.id;
-            const expiry = formatExpiry(card.expiryMonth, card.expiryYear);
+            const label = card.damaged ? 'Tarjeta dañada' : `Tarjeta terminada en ${card.last4}`;
 
             return (
               <li key={card.id} className="card-row">
-                <div className="card-summary">
-                  <span className="card-number" aria-label={`Tarjeta terminada en ${card.last4}`}>
-                    •••• {card.last4}
-                  </span>
-                  <span className="card-expiry">Caduca {expiry}</span>
-                </div>
+                {card.damaged ? (
+                  <div className="card-summary">
+                    <span className="card-number card-damaged" role="status">{CARD_DAMAGED_MESSAGE}</span>
+                  </div>
+                ) : (
+                  <div className="card-summary">
+                    <span className="card-number" aria-label={label}>
+                      •••• {card.last4}
+                    </span>
+                    <span className="card-expiry">Caduca {formatExpiry(card.expiryMonth, card.expiryYear)}</span>
+                  </div>
+                )}
 
                 {isEditing ? (
                   <form className="card-edit-form" onSubmit={(event) => handleUpdate(event, card)} noValidate>
@@ -299,7 +307,9 @@ export default function CardDashboard({ onSessionExpired }) {
                   <div className="row-actions">
                     {isConfirming ? (
                       <>
-                        <span className="confirm-text">¿Eliminar la tarjeta •••• {card.last4}?</span>
+                        <span className="confirm-text">
+                          {card.damaged ? '¿Eliminar la tarjeta dañada?' : `¿Eliminar la tarjeta •••• ${card.last4}?`}
+                        </span>
                         <button type="button" className="danger" onClick={() => handleDelete(card.id)} disabled={busy}>
                           Confirmar
                         </button>
@@ -309,19 +319,21 @@ export default function CardDashboard({ onSessionExpired }) {
                       </>
                     ) : (
                       <>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => startEditing(card)}
-                          aria-label={`Editar la tarjeta terminada en ${card.last4}`}
-                        >
-                          Editar
-                        </button>
+                        {!card.damaged && (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => startEditing(card)}
+                            aria-label={`Editar la ${label.toLowerCase()}`}
+                          >
+                            Editar
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="danger"
                           onClick={() => startConfirming(card.id)}
-                          aria-label={`Eliminar la tarjeta terminada en ${card.last4}`}
+                          aria-label={`Eliminar la ${label.toLowerCase()}`}
                         >
                           Eliminar
                         </button>

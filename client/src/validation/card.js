@@ -1,7 +1,8 @@
-// Validación de tarjetas en el cliente. Aplica las mismas reglas que el
-// servidor (server/src/infrastructure/http/card-request.js) para mostrar el
-// error junto a cada campo sin enviar la petición; el servidor vuelve a
-// comprobarlo todo.
+// Validación de tarjetas en el cliente. Es la única comprobación de contenido
+// del sistema (paso 10): los valores viajan cifrados y el servidor
+// (server/src/infrastructure/http/card-request.js) solo puede comprobar su
+// estructura y sus tamaños. El error se muestra junto a cada campo sin enviar
+// nada.
 
 const MAX_YEARS_AHEAD = 20;
 

@@ -25,7 +25,7 @@ Temas de referencia:
 | `E_k(m)` | Transformación (función) de cifrado con la clave `k` | `Ek` | T1 | Todos |
 | `D_k(c)` | Transformación de descifrado con la clave `k` | `Dk` | T1 | Login, Tarjeta |
 | `K_L`, `K_D`, `K_t` | Clave, un elemento del espacio de claves | `k ∈ K` | T1 | Todos |
-| Valores de 128 bits de `K_D` y `K_t` | Tamaño del espacio de claves: 2¹²⁸ claves posibles | `K` | T1 | Todos |
+| Valores de 128 bits de `K_D` y de 256 bits de `K_t` | Tamaño del espacio de claves: 2¹²⁸ o 2²⁵⁶ claves posibles | `K` | T1 | Todos |
 | HTTPS/TLS entre el cliente y la API | Canal seguro frente a canal inseguro | — | T1 | Todos |
 | Cliente → servidor | Emisor → receptor (A → B, Alicia y Benito) | `A`, `B` | T1, T4 | Todos |
 | Atacante que prueba contraseñas («fuerza bruta») | Criptoanalista, ataque de fuerza bruta | — | T1 | Alta, Login |
@@ -34,12 +34,14 @@ Temas de referencia:
 
 | Símbolo en los diagramas | Término de clase | Notación de clase | Tema | Diagramas |
 |---|---|---|---|---|
-| AES-128 | Algoritmo AES (Rijndael): bloque de 128 bits y clave de 128 bits, con 10 rondas | AES128 | T3.2 | Todos |
+| AES-128 (`K_D`), AES-256 (`K_t`) | Algoritmo AES (Rijndael): bloque de 128 bits y clave de 128 bits (10 rondas) o de 256 bits (14 rondas) | AES128, AES256 | T3.2 | Todos |
 | `K_D`, `K_t` | Clave secreta de un criptosistema simétrico (la misma para cifrar y descifrar) | `k` | T1, T3 | Alta, Login, Tarjeta |
-| CBC | Modo de encadenamiento de bloques cifrados (Cipher Block Chaining) | `c1 = Ek(m1⊕VI)`, `ci = Ek(mi⊕ci-1)` | T3.2 | Todos |
-| `VI`, `VI_num`, `VI_cad`, `VI_cvv` | Vector de inicialización: un número aleatorio que puede ser público | `VI` | T3.2 | Todos |
-| Relleno al cifrar con CBC | Relleno (padding) del último bloque | — | T3.2 | Todos |
-| AES-GCM (mejora propuesta) | Se basa en el modo contador (CTR) | `[nonce ‖ contador]` | T3.2 (solo CTR) | Puntos que hay que decidir |
+| CBC | Modo de encadenamiento de bloques cifrados (Cipher Block Chaining); se usa para `c_kU` | `c1 = Ek(m1⊕VI)`, `ci = Ek(mi⊕ci-1)` | T3.2 | Alta, Login |
+| `VI`, `VI_num`, `VI_cad`, `VI_cvv` | Vector de inicialización: un número aleatorio que puede ser público (16 bytes en CBC, 12 en GCM) | `VI` | T3.2 | Todos |
+| Relleno al cifrar con CBC | Relleno (padding) del último bloque | — | T3.2 | Alta, Login |
+| Relleno con espacios antes de GCM | No es el relleno de bloque: GCM no lo necesita. Sirve para que el tamaño del cifrado no revele la longitud del valor | — | — | Tarjeta |
+| AES-GCM (paso 10) | Cifrado autenticado: se basa en el modo contador (CTR) y añade una etiqueta de 128 bits que detecta cambios | `[nonce ‖ contador]` | T3.2 (solo CTR) | Tarjeta |
+| `AAD_x` (`"<id>:<campo>"`) | Datos asociados: se autentican con la etiqueta pero no se cifran; ligan cada valor a su tarjeta y a su campo | — | No aparece en los apuntes | Tarjeta |
 | `←` aleatorio (`VI`, `K_t`, `sal`, `r`) | Número aleatorio (secuencias pseudoaleatorias) | — | T3.1 | Todos |
 | `‖` | Concatenación (en el modo CTR, `[nonce ‖ contador]`) | `‖` | T3.2 | Alta, Login |
 
@@ -65,7 +67,7 @@ Temas de referencia:
 |---|---|---|
 | Cifrar los datos de la tarjeta y la clave privada | Confidencialidad | T1, T2 |
 | Comprobar `K_L` en el login | Autenticidad | T1, T2 |
-| Detectar si se ha modificado `c_kU` o `c_x` (CBC no lo hace; AES-GCM sí) | Integridad | T1, T2 |
+| Detectar si se ha modificado `c_x` (AES-GCM, paso 10) o `c_kU` (pendiente: CBC no lo hace) | Integridad | T1, T2 |
 
 ## 5. Símbolos que no aparecen en los temas 1 a 4
 
@@ -84,7 +86,7 @@ salen de las anotaciones de clase.
 | `JWT` | Token de sesión firmado por el servidor | T6 *Firma digital* y T7 *Identidad digital* |
 | Reto-respuesta firmado con `k_U` (mejora) | Autenticación con firma | T6 y T7 |
 | Relleno OAEP de RSA | Relleno aleatorio para RSA | No aparece en los apuntes |
-| `cardId` (UUID) | Identificador de la tarjeta | No es criptográfico |
+| `id` (UUID v4 de la tarjeta) | Identificador de la tarjeta, generado en el navegador; entra en `AAD_x` | No es criptográfico |
 
 ## Posibles confusiones con la notación de clase
 

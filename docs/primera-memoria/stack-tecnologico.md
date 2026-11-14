@@ -69,6 +69,16 @@ navegador descifra `c_kU` con `AES-CBC` de Web Crypto, importa el PKCS#8 como
 `RSA-OAEP` no exportable y comprueba el par cifrando y descifrando un valor
 aleatorio con `subtle.encrypt` / `subtle.decrypt`. Sin librerías nuevas.
 
+**Ya en uso (paso 10, tarjetas cifradas):** `client/src/security/tarjetas-cifradas.js`
+cifra cada valor de la tarjeta con `AES-GCM` de Web Crypto (clave `K_t` de
+256 bits de `getRandomValues`, importada como `CryptoKey` no exportable, VI
+de 12 bytes, etiqueta de 128 bits y datos asociados `"<id>:<campo>"`) y
+envuelve `K_t` con la clave pública del usuario mediante `RSA-OAEP`
+(`subtle.encrypt`). El navegador descifra con `subtle.decrypt` y la `k_U` del
+login. El mismo módulo corre en Node (semilla, tests del servidor y
+`scripts/cifrar-tarjeta.mjs`). El servidor no usa ninguna primitiva nueva:
+solo comprueba tamaños. Sin librerías nuevas.
+
 #### Cliente (navegador): Web Crypto API (`crypto.subtle`)
 
 Está integrada en todos los navegadores modernos y no hay que instalar nada.
@@ -78,8 +88,8 @@ Está integrada en todos los navegadores modernos y no hay que instalar nada.
 | Resumen de la contraseña (`H(pw)`, paso 7) | `SHA-256` (provisional; el diseño pide SHA3-256, ver decisiones abiertas) |
 | Derivar claves desde la contraseña | PBKDF2-HMAC-SHA-256 y HKDF |
 | Cifrar la clave privada (paso 7) | AES-CBC con clave de 128 bits y VI aleatorio |
-| Cifrar los datos de las tarjetas | AES-GCM (también hay AES-CBC) |
-| Par de claves del usuario (paso 7) y envoltura de la clave de cada tarjeta | RSA-OAEP (2048 bits, `e = 65537`, SHA-256) |
+| Cifrar los datos de las tarjetas (paso 10) | AES-GCM con clave de 256 bits, VI de 12 bytes y datos asociados (también hay AES-CBC) |
+| Par de claves del usuario (paso 7) y envoltura de la clave de cada tarjeta (paso 10) | RSA-OAEP (2048 bits, `e = 65537`, SHA-256) |
 | Firma (reto-respuesta) | ECDSA P-256 |
 | Valores aleatorios (VI, claves, sales) | `crypto.getRandomValues` |
 

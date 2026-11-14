@@ -8,7 +8,7 @@ Es una única base de código JavaScript con un cliente Vite + React y una API E
 
 - **Cliente:** vista de login y vista de sesión, con los textos en español. El login llama al servidor real y la vista de sesión consulta la sección privada de la API con el token de sesión. Todos los usuarios tienen un dashboard **Mis tarjetas** para dar de alta, ver (enmascaradas), modificar y eliminar sus tarjetas. Los administradores ven además un panel para dar de alta, renombrar y eliminar usuarios. Al dar de alta, el formulario pide la contraseña dos veces y el navegador genera el par de claves RSA del nuevo usuario antes de enviar el alta.
 - **Servidor:** Express con SQLite, organizado por capas en `server/src/`. Expone una sección pública (`POST /api/public/login`), una sección privada protegida por un middleware de autenticación con JWT (`GET /api/private/me`), las tarjetas del propio usuario (`/api/private/cards`), una sección de administración de usuarios solo para administradores (`/api/private/admin/users`) y un endpoint de salud. Las tarjetas se guardan en `CARD` y la relación N:N `USER_CARD`.
-- **Seguridad:** el canal está cifrado: cliente y servidor solo atienden por **HTTPS**, cada uno con su propio certificado autofirmado generado con OpenSSL (ver [HTTPS y certificados](#https-y-certificados)). **La contraseña nunca sale del navegador** (paso 8): el cliente la resume (`h = H(pw)`) y la parte en dos mitades de 128 bits, la **clave de login** `K_L`, que es lo único que viaja al servidor, y la **clave de datos** `K_D`, que nunca sale del navegador. El servidor guarda de `K_L` solo una sal por usuario y un hash lento con pimienta (`h_L = scrypt(K_L ‖ pimienta, sal)`, **provisional** hasta que el equipo elija la KDF definitiva) y lo compara en tiempo constante; la pimienta se lee de `LOGIN_PEPPER`. Desde el paso 7, al dar de alta un usuario el navegador genera además el **par de claves RSA-OAEP de 2048 bits** del usuario y guarda en `USER` la clave pública y la clave privada cifrada con AES-128-CBC bajo `K_D` (`client/src/security/claves-usuario.js`), que el servidor no puede abrir. Desde el paso 9, el login devuelve ese material al propio usuario y **el navegador abre su clave privada** con `K_D`, comprueba que corresponde a la pública, se queda con el par en memoria (`CryptoKey` no exportables) y borra `K_D`; si no puede abrirla, no entra en la sesión. **PROVISIONAL:** el resumen de la contraseña es SHA-256 hasta que el equipo entregue SHA3-256. Lo que sigue sin proteger, a propósito: los datos de las tarjetas, incluido el CVV, **se guardan en texto claro**, y el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica.
+- **Seguridad:** el canal está cifrado: cliente y servidor solo atienden por **HTTPS**, cada uno con su propio certificado autofirmado generado con OpenSSL (ver [HTTPS y certificados](#https-y-certificados)). **La contraseña nunca sale del navegador** (paso 8): el cliente la resume (`h = H(pw)`) y la parte en dos mitades de 128 bits, la **clave de login** `K_L`, que es lo único que viaja al servidor, y la **clave de datos** `K_D`, que nunca sale del navegador. El servidor guarda de `K_L` solo una sal por usuario y un hash lento con pimienta (`h_L = scrypt(K_L ‖ pimienta, sal)`, **provisional** hasta que el equipo elija la KDF definitiva) y lo compara en tiempo constante; la pimienta se lee de `LOGIN_PEPPER`. Desde el paso 7, al dar de alta un usuario el navegador genera además el **par de claves RSA-OAEP de 2048 bits** del usuario y guarda en `USER` la clave pública y la clave privada cifrada con AES-128-CBC bajo `K_D` (`client/src/security/claves-usuario.js`), que el servidor no puede abrir. Desde el paso 9, el login devuelve ese material al propio usuario y **el navegador abre su clave privada** con `K_D`, comprueba que corresponde a la pública, se queda con el par en memoria (`CryptoKey` no exportables) y borra `K_D`; si no puede abrirla, no entra en la sesión. **PROVISIONAL:** el resumen de la contraseña es SHA-256 hasta que el equipo entregue SHA3-256. Desde el paso 10 **las tarjetas se cifran en el navegador y el servidor nunca puede leerlas**: por tarjeta se genera una clave aleatoria `K_t` (AES-256), cada valor (número, caducidad, CVV) se cifra con ella en modo GCM con datos asociados que lo ligan a su tarjeta y a su campo, y `K_t` viaja y se guarda envuelta con la clave pública del usuario (`w_U = E_K_U(K_t)`, RSA-OAEP); solo `k_U`, abierta en el login, puede recuperarla (`client/src/security/tarjetas-cifradas.js`). Lo que sigue sin proteger, a propósito: el token se firma con un secreto HMAC **provisional** hasta que el equipo entregue la firma asimétrica.
 - **Planificación:** el trabajo se divide en pasos pequeños propuestos como cambios de OpenSpec. Consulta la sección [Planificación](#planificación).
 
 ## Estructura
@@ -107,12 +107,12 @@ Con credenciales incorrectas, la vista muestra el error genérico `Email o contr
 
 Debajo aparece el dashboard **Mis tarjetas**, para todos los usuarios:
 
-- La lista muestra cada tarjeta con el número enmascarado (`•••• 1111`) y la caducidad (`MM/AA`), o `Todavía no has guardado ninguna tarjeta.` si no hay ninguna. El número completo y el CVV nunca vuelven del servidor.
-- El formulario **Añadir una tarjeta** pide número, caducidad (mes y año) y CVV, con los `autocomplete` de tarjeta del navegador. Valida en el cliente con las mismas reglas que el servidor (Luhn, caducidad no vencida, CVV de 3 o 4 dígitos) y muestra el error junto al campo sin enviar nada. El CVV se borra del formulario tras cada envío.
-- **Editar** abre un formulario en la fila con la caducidad rellenada y el número y el CVV vacíos: un campo vacío no se cambia y solo se envía lo modificado. **Eliminar** pide confirmación en la misma fila.
+- La lista muestra cada tarjeta con el número enmascarado (`•••• 1111`) y la caducidad (`MM/AA`), o `Todavía no has guardado ninguna tarjeta.` si no hay ninguna. El servidor devuelve cada tarjeta cifrada y con su clave envuelta; el navegador la abre con `k_U`, calcula el resumen (últimos 4 dígitos y caducidad) y descarta el número completo y el CVV. Si una tarjeta no se puede descifrar o no supera la comprobación de integridad, la fila muestra `Tarjeta dañada: no se ha podido descifrar.` y solo se puede eliminar.
+- El formulario **Añadir una tarjeta** pide número, caducidad (mes y año) y CVV, con los `autocomplete` de tarjeta del navegador. Valida en el cliente (Luhn, caducidad no vencida, CVV de 3 o 4 dígitos), que es ya la única validación de contenido porque el servidor solo recibe cifrado, y muestra el error junto al campo sin enviar nada. Antes de enviar, genera el `id` de la tarjeta y la cifra (`cifrarTarjeta`). El CVV se borra del formulario tras cada envío.
+- **Editar** abre un formulario en la fila con la caducidad rellenada y el número y el CVV vacíos: un campo vacío no se cambia y solo se envía lo modificado, cifrado con la misma `K_t` de la tarjeta y vectores nuevos. **Eliminar** pide confirmación en la misma fila.
 - Si la tarjeta se ha borrado desde otra sesión, se muestra `Tarjeta no encontrada` y desaparece de la lista.
 
-Las llamadas están en `client/src/api/cards.js`, la validación en `client/src/validation/card.js` y el dashboard en `client/src/components/CardDashboard.jsx`. Los datos de las tarjetas no se escriben en la consola ni en el almacenamiento del navegador.
+Las llamadas y el cifrado y descifrado están en `client/src/api/cards.js` (sobre `client/src/security/tarjetas-cifradas.js`), la validación en `client/src/validation/card.js` y el dashboard en `client/src/components/CardDashboard.jsx`. El panel solo ve resúmenes; los datos descifrados no se escriben en la consola ni en el almacenamiento del navegador.
 
 Si el usuario es administrador, debajo aparece el panel **Usuarios**: una tabla con el nombre, el email y el rol de cada cuenta, un formulario para dar de alta usuarios (nombre, email, contraseña inicial y si es administrador), un botón para editar el nombre en la propia fila y otro para eliminar, que pide confirmación en la misma fila. La fila propia no tiene botón de eliminar. Los errores del servidor (por ejemplo, `Ya existe un usuario con ese email`) se muestran encima de la tabla. Si el servidor deja de reconocer al usuario como administrador, el panel muestra `No tienes permiso para gestionar usuarios.` y oculta las acciones. Los empleados no ven el panel. Las llamadas están en `client/src/api/admin-users.js` y el panel en `client/src/components/UserAdminPanel.jsx`.
 
@@ -128,9 +128,9 @@ La API del servidor incluye:
 - `POST /api/private/admin/users`: da de alta un usuario. Envía `{ "name", "email", "loginKey", "isAdmin", "publicKey", "encryptedPrivateKey", "privateKeyIv" }` (`isAdmin` es opcional y por defecto `false`). `loginKey` es `K_L` en base64, como en el login: el servidor genera una sal de 16 bytes, guarda `loginKeySalt` y `loginKeyHash` y descarta `K_L`. Las tres claves las genera el navegador y van en base64: `publicKey` es la clave pública RSA del usuario en formato SPKI, `encryptedPrivateKey` la clave privada (PKCS#8) cifrada con AES-128-CBC y `privateKeyIv` el vector de inicialización. Responde `201` con el usuario creado (nunca las claves), `409` con `{ "error": "Ya existe un usuario con ese email" }` o `400` con `{ "error": "Datos de usuario no válidos" }`. Reglas: nombre de 1 a 100 caracteres, email con una sola `@` y hasta 254 caracteres (se guarda en minúsculas y sin espacios), `loginKey` de exactamente 16 bytes, clave pública RSA de al menos 2048 bits, vector de 16 bytes y clave cifrada de 16 a 4096 bytes en bloques de 16. La longitud de la contraseña (8 a 128 caracteres) la comprueba el cliente, porque el servidor ya no la ve; un cuerpo con `password` responde `400`. `GET` tampoco devuelve nunca la sal, el hash ni las claves.
 - `PATCH /api/private/admin/users/:id`: cambia el nombre. Envía `{ "name" }` y nada más. Cualquier otro campo da `400`. Responde `200` con el usuario actualizado, o `404` con `{ "error": "Usuario no encontrado" }`.
 - `DELETE /api/private/admin/users/:id`: elimina el usuario y responde `204`. Un administrador no puede eliminarse a sí mismo (`400` con `{ "error": "No puedes eliminar tu propia cuenta" }`). Si el usuario no existe responde `404`.
-- `GET /api/private/cards`: lista las tarjetas del usuario del token por orden de alta. Responde `200` con `{ "cards": [{ "id", "last4", "expiryMonth", "expiryYear", "createdAt" }] }`; nunca el número completo ni el CVV.
-- `POST /api/private/cards`: da de alta una tarjeta con el usuario del token como único propietario. Envía `{ "number", "expiryMonth", "expiryYear", "cvv" }`. Responde `201` con la tarjeta enmascarada o `400` con `{ "error": "Datos de tarjeta no válidos" }`. Reglas: número de 13 a 19 dígitos que supere Luhn (se admiten espacios y guiones, que se quitan), mes entero de 1 a 12, año entero de cuatro cifras como mucho 20 años por delante, caducidad no anterior al mes actual, CVV de 3 o 4 dígitos y ningún otro campo. **Los datos se guardan en texto claro.**
-- `PATCH /api/private/cards/:id`: modifica solo los campos enviados (al menos uno; mes y año siempre juntos) con las mismas reglas. Responde `200` con la tarjeta enmascarada, `400`, `403` con `{ "error": "Acceso denegado" }` si el usuario la ve pero no es su propietario (tarjetas compartidas, fase 2) o `404` con `{ "error": "Tarjeta no encontrada" }`.
+- `GET /api/private/cards`: lista las tarjetas del usuario del token por orden de alta, tal como están guardadas: `200` con `{ "cards": [{ "id", "number": { "iv", "ciphertext" }, "expiry": { "iv", "ciphertext" }, "cvv": { "iv", "ciphertext" }, "wrappedKey", "createdAt" }] }`. Todo en base64; el servidor no puede descifrar nada, así que tampoco devuelve `last4` ni la caducidad en claro: los calcula el navegador.
+- `POST /api/private/cards`: da de alta una tarjeta con el usuario del token como único propietario. Envía `{ "id", "number": { "iv", "ciphertext" }, "expiry": { "iv", "ciphertext" }, "cvv": { "iv", "ciphertext" }, "wrappedKey" }`, donde `id` es un UUID v4 generado por el navegador, cada `iv` mide 12 bytes, los `ciphertext` miden exactamente 35, 23 y 20 bytes (AES-256-GCM sobre textos de tamaño fijo: número de 19 caracteres, caducidad `MM/AAAA`, CVV de 4) y `wrappedKey` es la clave de la tarjeta envuelta con RSA-OAEP (256 bytes). Responde `201` con la tarjeta tal como se ha guardado (la misma forma que el listado), `400` con `{ "error": "Datos de tarjeta no válidos" }` si la estructura o los tamaños no cuadran o sobra algún campo, o `409` con `{ "error": "La tarjeta ya existe" }` si el `id` ya está en uso (sea de quien sea). El servidor ya no valida el contenido (Luhn, caducidad): no puede verlo.
+- `PATCH /api/private/cards/:id`: modifica solo los valores enviados (subconjunto no vacío de `number`, `expiry` y `cvv`, cada uno `{ "iv", "ciphertext" }` con los tamaños anteriores; `id` o `wrappedKey` en el cuerpo dan `400`). Responde `200` con la tarjeta completa, `400`, `403` con `{ "error": "Acceso denegado" }` si el usuario la ve pero no es su propietario (tarjetas compartidas, fase 2) o `404` con `{ "error": "Tarjeta no encontrada" }`.
 - `DELETE /api/private/cards/:id`: elimina la tarjeta y responde `204`, o `403`/`404` como el anterior.
 - `GET /api/health`: comprueba que el servidor responde.
 
@@ -187,26 +187,35 @@ curl -s --cacert server/certs/cert.pem https://localhost:3000/api/private/admin/
 curl -s --cacert server/certs/cert.pem -i https://localhost:3000/api/private/admin/users -H "Authorization: Bearer $TOKEN"
 ```
 
-Tarjetas con `curl`, con el token del empleado del primer ejemplo:
+Tarjetas con `curl`, con el token del empleado del primer ejemplo. Como la API solo acepta tarjetas cifradas, el cuerpo se genera con `scripts/cifrar-tarjeta.mjs`, que cifra igual que el navegador usando la clave pública del usuario guardada en `server/data/app.sqlite` (hace falta haber sembrado):
 
 ```sh
-# Lista de tarjetas → 200 con la tarjeta de prueba •••• 1111
+# Lista de tarjetas → 200 con la tarjeta de prueba, cifrada: {"cards":[{"id":"…","number":{"iv":"…","ciphertext":"…"},…,"wrappedKey":"…"}]}
 curl -s --cacert server/certs/cert.pem https://localhost:3000/api/private/cards -H "Authorization: Bearer $TOKEN"
 
-# Alta → 201 {"id":"…","last4":"4444",…}
-CARD_ID=$(curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/private/cards \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"number":"5555 5555 5555 4444","expiryMonth":11,"expiryYear":2029,"cvv":"456"}' \
-  | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).id))')
+# Cuerpo cifrado de una tarjeta nueva (id, tres valores cifrados y la clave envuelta)
+BODY=$(node scripts/cifrar-tarjeta.mjs empleado@empresa.com demo1234 '5555 5555 5555 4444' 11/2029 456)
 
-# Cambia solo la caducidad → 200
-curl -s --cacert server/certs/cert.pem -X PATCH "https://localhost:3000/api/private/cards/$CARD_ID" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"expiryMonth":6,"expiryYear":2031}'
+# Alta → 201 con la tarjeta tal como se ha guardado
+curl -s --cacert server/certs/cert.pem -X POST https://localhost:3000/api/private/cards \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY"
+
+# El mismo cuerpo otra vez → 409 {"error":"La tarjeta ya existe"} (el id ya está en uso)
+curl -s --cacert server/certs/cert.pem -i -X POST https://localhost:3000/api/private/cards \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY"
+
+# Descifra lo que devuelve el servidor con la clave privada del empleado (abierta con su contraseña)
+CARD_ID=$(echo "$BODY" | node -e 'process.stdin.on("data", (d) => console.log(JSON.parse(d).id))')
+curl -s --cacert server/certs/cert.pem https://localhost:3000/api/private/cards -H "Authorization: Bearer $TOKEN" \
+  | node -e 'process.stdin.on("data", (d) => console.log(JSON.stringify(JSON.parse(d).cards.find((c) => c.id === process.argv[1]))))' "$CARD_ID" \
+  | node scripts/cifrar-tarjeta.mjs empleado@empresa.com demo1234 --abrir
+# {"id":"…","number":"5555555555554444","expiry":"11/2029","cvv":"456"}
 
 # Borra la tarjeta → 204
 curl -s --cacert server/certs/cert.pem -i -X DELETE "https://localhost:3000/api/private/cards/$CARD_ID" -H "Authorization: Bearer $TOKEN"
 ```
+
+Para modificar un valor con `PATCH` hace falta cifrarlo con la misma clave de la tarjeta; el navegador lo hace abriendo `wrappedKey` con `k_U` (`updateCard` en `client/src/api/cards.js`).
 
 El servidor sigue una arquitectura por capas (dominio, aplicación e infraestructura) descrita en [implementación y seguridad](docs/primera-memoria/implementacion-y-seguridad.md).
 
@@ -224,12 +233,12 @@ Cada conexión activa las claves foráneas de SQLite (`PRAGMA foreign_keys = ON`
 
 Las tarjetas y los usuarios se relacionan como **N:N**, aunque en la fase 1 cada tarjeta tenga un único usuario, para que compartir tarjetas en la fase 2 consista en añadir filas y no en migrar datos:
 
-- `CARD`: `id` (UUID v4 generado en el servidor), `number` y `cvv` (texto, para conservar los ceros a la izquierda), `expiryMonth`, `expiryYear`, `createdAt` y `updatedAt` (ISO 8601 en UTC). No tiene ninguna columna de propietario.
-- `USER_CARD`: `userId`, `cardId`, `isOwner` y `createdAt`, con clave primaria `(userId, cardId)` y claves foráneas con borrado en cascada. El índice único parcial `user_card_one_owner` impide que una tarjeta tenga dos propietarios.
+- `CARD`: `id` (UUID v4 generado en el navegador), los pares `numberIv`/`numberCiphertext`, `expiryIv`/`expiryCiphertext` y `cvvIv`/`cvvCiphertext` (texto en base64: vector de 12 bytes y cifrado AES-256-GCM de cada valor, paso 10), `createdAt` y `updatedAt` (ISO 8601 en UTC). No tiene ninguna columna de propietario ni ningún dato en claro.
+- `USER_CARD`: `userId`, `cardId`, `isOwner`, `wrappedKey` (la clave de la tarjeta envuelta con la clave pública de ese usuario, base64 de 256 bytes) y `createdAt`, con clave primaria `(userId, cardId)` y claves foráneas con borrado en cascada. El índice único parcial `user_card_one_owner` impide que una tarjeta tenga dos propietarios.
 
 El repositorio (`server/src/infrastructure/database/card-repository.js`) lee las tarjetas siempre a través de `USER_CARD`, solo deja modificarlas o borrarlas a su propietario y no tiene ninguna operación para dar acceso a otro usuario. Al eliminar un usuario se eliminan también las tarjetas de las que es propietario.
 
-**PROVISIONAL:** número, caducidad y CVV se guardan en texto claro; la fase 1 los sustituirá por un sobre cifrado en el navegador. Guardar el CVV incumple PCI DSS a sabiendas: es un ejercicio docente.
+Número, caducidad y CVV se guardan cifrados con una clave que el servidor no tiene: con acceso a `app.sqlite` solo se ven los cifrados y las claves envueltas. Guardar el CVV, aunque sea cifrado, incumple PCI DSS a sabiendas: es un ejercicio docente.
 
 ## Migraciones de base de datos
 
@@ -251,7 +260,7 @@ npm run db:seed --workspace=server
 
 `db:make` crea un archivo CommonJS en `server/migrations/`. Define el cambio de esquema en `up` y su reversión en `down`. Knex registra cada migración aplicada y no la vuelve a ejecutar.
 
-La primera migración crea la tabla `USER` con `name`, `email` e `isAdmin` (booleano, `false` por defecto). La segunda añade la clave primaria `id`, la columna `password` (en texto claro en aquel paso) y hace único el `email`, que se guarda siempre en minúsculas. La tercera borra la antigua tabla `notes`, y la cuarta crea `CARD` y `USER_CARD`. La quinta añade a `USER` las claves del usuario (`publicKey`, `encryptedPrivateKey`, `privateKeyIv`, paso 7) y la sexta sustituye `password` por `loginKeySalt` y `loginKeyHash` (paso 8); los usuarios creados antes quedan con esas columnas a `NULL` y no pueden iniciar sesión, así que hay que volver a sembrar. Su `down` restaura `password` vacía. El seed está en `server/seeds/`, solo debe usarse en desarrollo y crea, además de los usuarios de prueba, una tarjeta de prueba del empleado (número de test de Visa `4111 1111 1111 1111`, caducidad 12/2030, CVV `123`). Para cambios posteriores, crea una migración nueva en vez de modificar una que ya se haya aplicado.
+La primera migración crea la tabla `USER` con `name`, `email` e `isAdmin` (booleano, `false` por defecto). La segunda añade la clave primaria `id`, la columna `password` (en texto claro en aquel paso) y hace único el `email`, que se guarda siempre en minúsculas. La tercera borra la antigua tabla `notes`, y la cuarta crea `CARD` y `USER_CARD`. La quinta añade a `USER` las claves del usuario (`publicKey`, `encryptedPrivateKey`, `privateKeyIv`, paso 7) y la sexta sustituye `password` por `loginKeySalt` y `loginKeyHash` (paso 8); los usuarios creados antes quedan con esas columnas a `NULL` y no pueden iniciar sesión, así que hay que volver a sembrar. Su `down` restaura `password` vacía. La séptima (paso 10) **vacía `USER_CARD` y `CARD`**, sustituye las columnas en claro de `CARD` por los pares `*Iv`/`*Ciphertext` y añade `USER_CARD.wrappedKey`: cifrar las tarjetas en claro desde el servidor contradiría el modelo (tendría que leerlas) y las únicas que existían eran las de la semilla, así que tras aplicarla hay que volver a sembrar. El seed está en `server/seeds/`, solo debe usarse en desarrollo y crea, además de los usuarios de prueba, una tarjeta de prueba del empleado (número de test de Visa `4111 1111 1111 1111`, caducidad 12/2030, CVV `123`), cifrada con el mismo módulo que el navegador y la clave pública recién generada del empleado. Para cambios posteriores, crea una migración nueva en vez de modificar una que ya se haya aplicado.
 
 ## Planificación
 

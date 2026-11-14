@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -50,4 +50,25 @@ export async function createTestDatabase() {
       rmSync(directory, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Cuerpo cifrado de un alta de tarjeta, tal como lo envía el navegador,
+ * generado con el módulo del cliente y envuelto con `publicKey` (SPKI en
+ * base64). `overrides` permite fijar id, number, expiry (MM/AAAA) y cvv.
+ */
+export async function encryptedTestCard(publicKey, overrides = {}) {
+  const { importarClavePublica } = await import('../../client/src/security/claves-usuario.js');
+  const { cifrarTarjeta } = await import('../../client/src/security/tarjetas-cifradas.js');
+  const card = { id: randomUUID(), number: '5555555555554444', expiry: '12/2030', cvv: '123', ...overrides };
+  return cifrarTarjeta(await importarClavePublica(publicKey), card);
+}
+
+/**
+ * Material de claves del empleado de la semilla, leído de USER:
+ * { publicKey, encryptedPrivateKey, privateKeyIv }.
+ */
+export async function employeeKeys(knex) {
+  const row = await knex('USER').where({ email: 'empleado@empresa.com' }).first();
+  return { publicKey: row.publicKey, encryptedPrivateKey: row.encryptedPrivateKey, privateKeyIv: row.privateKeyIv };
 }

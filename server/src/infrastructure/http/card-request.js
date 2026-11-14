@@ -1,8 +1,23 @@
-const MAX_NUMBER_LENGTH = 32;
-const MAX_YEARS_AHEAD = 20;
+// Validación estructural de las peticiones de tarjetas (paso 10). El servidor
+// recibe los valores ya cifrados en el navegador, así que no puede comprobar
+// el contenido (Luhn, caducidad, CVV): eso lo hace el cliente antes de cifrar
+// (client/src/validation/card.js). Aquí solo se comprueba que lo que llega
+// tiene exactamente la forma y los tamaños que produce el módulo
+// client/src/security/tarjetas-cifradas.js.
 
-const CARD_FIELDS = new Set(['number', 'expiryMonth', 'expiryYear', 'cvv']);
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+
+const IV_LENGTH = 12;
+const TAG_LENGTH = 16;
+// Longitud en claro de cada valor (rellenado en el cliente) más la etiqueta.
+export const CIPHERTEXT_LENGTHS = { number: 19 + TAG_LENGTH, expiry: 7 + TAG_LENGTH, cvv: 4 + TAG_LENGTH };
+export const WRAPPED_KEY_LENGTH = 256;
+
+const VALUE_FIELDS = new Set(Object.keys(CIPHERTEXT_LENGTHS));
+const CREATE_FIELDS = new Set([...VALUE_FIELDS, 'id', 'wrappedKey']);
+const VALUE_KEYS = new Set(['iv', 'ciphertext']);
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -12,84 +27,57 @@ function hasOnlyFields(body, allowed) {
   return Object.keys(body).every((key) => allowed.has(key));
 }
 
+// Bytes que codifica un base64 válido, o -1 si no lo es.
+function base64Length(value) {
+  if (typeof value !== 'string' || value.length % 4 !== 0 || !BASE64.test(value)) return -1;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  return (value.length / 4) * 3 - padding;
+}
+
+function isBase64Of(value, length) {
+  return base64Length(value) === length;
+}
+
+// { iv, ciphertext } con los tamaños del campo, o null.
+function parseValue(field, value) {
+  if (!isPlainObject(value) || !hasOnlyFields(value, VALUE_KEYS) || Object.keys(value).length !== 2) return null;
+  if (!isBase64Of(value.iv, IV_LENGTH) || !isBase64Of(value.ciphertext, CIPHERTEXT_LENGTHS[field])) return null;
+  return { iv: value.iv, ciphertext: value.ciphertext };
+}
+
 /**
- * Comprobación de Luhn sobre una cadena de dígitos.
+ * Comprueba el cuerpo de un alta de tarjeta. Devuelve
+ * { id, number, expiry, cvv, wrappedKey } con el id en minúsculas, o null si
+ * no es válido.
  */
-export function passesLuhn(digits) {
-  let sum = 0;
-  for (let index = 0; index < digits.length; index += 1) {
-    let digit = Number(digits[digits.length - 1 - index]);
-    if (index % 2 === 1) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    sum += digit;
+export function parseCreateCardRequest(body) {
+  if (!isPlainObject(body) || !hasOnlyFields(body, CREATE_FIELDS)) return null;
+  if (typeof body.id !== 'string' || !UUID_V4.test(body.id)) return null;
+  if (!isBase64Of(body.wrappedKey, WRAPPED_KEY_LENGTH)) return null;
+
+  const data = { id: body.id.toLowerCase(), wrappedKey: body.wrappedKey };
+  for (const field of VALUE_FIELDS) {
+    data[field] = parseValue(field, body[field]);
+    if (!data[field]) return null;
   }
-  return sum % 10 === 0;
-}
-
-// Devuelve el número sin espacios ni guiones, o null si no es válido.
-function parseNumber(value) {
-  if (typeof value !== 'string' || value.length > MAX_NUMBER_LENGTH) return null;
-  const digits = value.replace(/[\s-]/g, '');
-  return /^\d{13,19}$/.test(digits) && passesLuhn(digits) ? digits : null;
-}
-
-// Una tarjeta vale hasta el último día de su mes: es válida si (año, mes) no
-// es anterior al mes actual, y el año no supera en más de 20 al actual.
-function isValidExpiry(month, year, now) {
-  if (!Number.isInteger(month) || month < 1 || month > 12) return false;
-  const currentYear = now.getFullYear();
-  if (!Number.isInteger(year) || year > currentYear + MAX_YEARS_AHEAD) return false;
-  return year > currentYear || (year === currentYear && month >= now.getMonth() + 1);
-}
-
-function isValidCvv(value) {
-  return typeof value === 'string' && /^\d{3,4}$/.test(value);
+  return data;
 }
 
 /**
- * Comprueba el cuerpo de un alta de tarjeta.
- * Devuelve { number, expiryMonth, expiryYear, cvv } normalizado, o null si no
- * es válido. `now` permite fijar la fecha actual en las pruebas.
+ * Comprueba el cuerpo de una modificación: al menos uno de number, expiry y
+ * cvv, cada uno { iv, ciphertext }, y nada más (ni id ni wrappedKey).
+ * Devuelve solo los valores enviados, o null si no es válido.
  */
-export function parseCreateCardRequest(body, { now = new Date() } = {}) {
-  if (!isPlainObject(body) || !hasOnlyFields(body, CARD_FIELDS)) return null;
-
-  const number = parseNumber(body.number);
-  const { expiryMonth, expiryYear, cvv } = body;
-  if (!number || !isValidExpiry(expiryMonth, expiryYear, now) || !isValidCvv(cvv)) return null;
-
-  return { number, expiryMonth, expiryYear, cvv };
-}
-
-/**
- * Comprueba el cuerpo de una modificación de tarjeta: al menos un campo, los
- * mismos que el alta, y el mes y el año de caducidad siempre juntos.
- * Devuelve solo los campos enviados, normalizados, o null si no es válido.
- */
-export function parseUpdateCardRequest(body, { now = new Date() } = {}) {
-  if (!isPlainObject(body) || !hasOnlyFields(body, CARD_FIELDS)) return null;
+export function parseUpdateCardRequest(body) {
+  if (!isPlainObject(body) || !hasOnlyFields(body, VALUE_FIELDS)) return null;
   if (Object.keys(body).length === 0) return null;
 
   const changes = {};
-
-  if ('number' in body) {
-    changes.number = parseNumber(body.number);
-    if (!changes.number) return null;
+  for (const field of VALUE_FIELDS) {
+    if (!(field in body)) continue;
+    changes[field] = parseValue(field, body[field]);
+    if (!changes[field]) return null;
   }
-
-  if ('expiryMonth' in body || 'expiryYear' in body) {
-    if (!isValidExpiry(body.expiryMonth, body.expiryYear, now)) return null;
-    changes.expiryMonth = body.expiryMonth;
-    changes.expiryYear = body.expiryYear;
-  }
-
-  if ('cvv' in body) {
-    if (!isValidCvv(body.cvv)) return null;
-    changes.cvv = body.cvv;
-  }
-
   return changes;
 }
 

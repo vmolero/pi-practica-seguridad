@@ -49,6 +49,14 @@ export class CardNotFoundError extends Error {
   }
 }
 
+// Ya existe una tarjeta con el identificador que envía el cliente (paso 10).
+export class CardConflictError extends Error {
+  constructor() {
+    super('La tarjeta ya existe');
+    this.name = 'CardConflictError';
+  }
+}
+
 // El usuario ve la tarjeta pero no es su propietario (tarjeta compartida, fase 2).
 export class CardForbiddenError extends Error {
   constructor() {

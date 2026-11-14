@@ -137,8 +137,8 @@ En desarrollo existen estos usuarios de prueba:
 
 Estos usuarios solo existen en la base de datos de desarrollo. El empleado de
 prueba tiene ya una tarjeta de prueba (`•••• 1111`, caducidad 12/30).
-**Aviso:** en esta versión los datos de las tarjetas se guardan sin cifrar; no
-uses una tarjeta real.
+**Aviso:** es una práctica docente que guarda el CVV; no uses una tarjeta
+real.
 
 ## Cerrar sesión
 
@@ -260,6 +260,18 @@ cuatro últimos dígitos (por ejemplo, `•••• 1111`), y su caducidad en l
 después de guardarlos. Si todavía no tienes ninguna, el panel indica
 *Todavía no has guardado ninguna tarjeta.*
 
+Los datos de tus tarjetas **se cifran en tu navegador antes de enviarse** y
+solo tu navegador puede descifrarlos, con la clave privada que abre al
+iniciar sesión. El servidor guarda y te devuelve los datos cifrados; por eso
+la lista tarda un instante en aparecer y por eso nadie que lea la base de
+datos, ni el servidor mismo, puede ver tus tarjetas.
+
+Si una tarjeta aparece como **Tarjeta dañada: no se ha podido descifrar.**,
+sus datos guardados se han alterado o no se corresponden con tu clave. No se
+puede editar ni mostrar; solo **Eliminar**. Elimínala y vuelve a darla de
+alta. Si te ocurre con todas tus tarjetas, avisa al administrador: puede
+indicar un problema con tus claves.
+
 ### Añadir una tarjeta
 
 1. En *Añadir una tarjeta*, escribe el **número de tarjeta** (puedes separar
@@ -267,7 +279,8 @@ después de guardarlos. Si todavía no tienes ninguna, el panel indica
    cifras) y el **CVV** (el texto se oculta mientras se escribe).
 2. Pulsa **Guardar tarjeta**.
 
-La tarjeta aparece en la lista y el formulario se vacía. El navegador puede
+El navegador comprueba los datos, los cifra y los envía. La tarjeta aparece
+en la lista y el formulario se vacía. El navegador puede
 ofrecerte autocompletar los datos de tus tarjetas guardadas.
 
 ### Modificar una tarjeta
@@ -276,13 +289,15 @@ ofrecerte autocompletar los datos de tus tarjetas guardadas.
    rellenada y el número y el CVV vacíos.
 2. Cambia solo lo que quieras corregir. **Deja vacío** el número o el CVV si
    no quieres cambiarlos.
-3. Pulsa **Guardar**. **Cancelar** deja la tarjeta como estaba.
+3. Pulsa **Guardar**. **Cancelar** deja la tarjeta como estaba. Solo se cifra
+   y se envía lo que has cambiado.
 
 ### Eliminar una tarjeta
 
 1. Pulsa **Eliminar** en la tarjeta.
-2. La fila pregunta *¿Eliminar la tarjeta •••• 1234?*. Pulsa **Confirmar**
-   para borrarla o **Cancelar** para dejarla.
+2. La fila pregunta *¿Eliminar la tarjeta •••• 1234?* (o *¿Eliminar la
+   tarjeta dañada?*). Pulsa **Confirmar** para borrarla o **Cancelar** para
+   dejarla.
 
 La eliminación es definitiva.
 
@@ -304,15 +319,16 @@ Los errores que devuelve el servidor aparecen en rojo encima de la lista:
 
 | Mensaje | Causa |
 | --- | --- |
-| *Datos de tarjeta no válidos* | El servidor ha rechazado los datos. El formulario conserva el número y la caducidad, pero tendrás que volver a escribir el CVV. |
+| *Datos de tarjeta no válidos* | El servidor ha rechazado la petición (no puede ver los datos: comprueba solo su forma). El formulario conserva el número y la caducidad, pero tendrás que volver a escribir el CVV. |
+| *La tarjeta ya existe* | El identificador generado para la tarjeta ya estaba en uso. No ocurre en la práctica; vuelve a guardarla. |
 | *Tarjeta no encontrada* | La tarjeta se ha eliminado mientras tanto (por ejemplo, desde otra ventana). Desaparece de la lista. |
 | *No se ha podido completar la operación. Inténtalo de nuevo.* | El servidor no responde o ha fallado. |
 
 Si tu sesión caduca mientras usas el panel, vuelves a la pantalla de login con
 el aviso de sesión caducada.
 
-> **Provisional:** en esta versión los datos de las tarjetas, incluido el CVV,
-> se envían y se guardan sin cifrar. La fase 1 los cifrará en el navegador.
+> **Aviso:** se guarda el CVV (cifrado) porque lo pide la práctica; en un
+> sistema real no se guardaría nunca.
 
 ### Pendiente
 

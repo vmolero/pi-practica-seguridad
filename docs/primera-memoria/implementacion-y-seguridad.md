@@ -11,7 +11,7 @@ seguridad se aplican en cada parte. El trabajo avanza en pasos pequeños:
 - **Paso 3:** panel de administración de usuarios (alta, cambio de nombre y
   eliminación) y primer control de acceso por rol en el servidor.
 - **Pasos 4 y 5:** tabla de tarjetas y dashboard **Mis tarjetas**, todavía con
-  los datos en texto claro.
+  los datos en texto claro (cifrados en el navegador desde el paso 10).
 - **Paso 6:** cifrado del canal. Cliente y servidor solo atienden por HTTPS,
   cada uno con su propio certificado autofirmado generado con OpenSSL.
 
@@ -41,13 +41,14 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
 │       ├── api/
 │       │   ├── admin-users.js # listUsers(), createUser(), renameUser(), deleteUser()
 │       │   ├── auth.js       # login(), getCurrentUser() y logout()
-│       │   ├── cards.js      # listCards(), createCard(), updateCard(), deleteCard()
+│       │   ├── cards.js      # listCards(), createCard(), updateCard(), deleteCard(); cifra y descifra
 │       │   ├── http.js       # apiFetch(): añade el token; 401 → sesión caducada
-│       │   └── session.js    # Token de sesión y K_D, solo en memoria
+│       │   └── session.js    # Token de sesión y claves del usuario (K_U, k_U), solo en memoria
 │       ├── validation/
-│       │   └── card.js       # validateCardForm(): mismas reglas que el servidor
+│       │   └── card.js       # validateCardForm(): única validación de contenido (el servidor no lo ve)
 │       ├── security/
-│       │   └── claves-usuario.js # derivarClaves(), generarClavesUsuario(), abrirClavePrivada()
+│       │   ├── claves-usuario.js # derivarClaves(), generarClavesUsuario(), abrirClavePrivada()
+│       │   └── tarjetas-cifradas.js # cifrarTarjeta(), descifrarTarjeta(): AES-256-GCM por valor y K_t envuelta con RSA-OAEP
 │       └── components/
 │           ├── CardDashboard.jsx # Mis tarjetas: lista, alta, edición y borrado
 │           ├── LoginForm.jsx    # Formulario de email y contraseña
@@ -57,15 +58,15 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
     ├── certs/                # Certificado y clave del servidor (no se versiona)
     ├── index.js              # Arranque: construye las dependencias y escucha por HTTPS
     ├── knexfile.cjs          # Configuración de Knex; activa las claves foráneas
-    ├── migrations/           # Migraciones de Knex (USER, CARD, USER_CARD, claves en USER)
-    ├── seeds/                # Usuarios (con sus claves) y tarjeta de prueba para desarrollo
+    ├── migrations/           # Migraciones de Knex (USER, CARD, USER_CARD, claves en USER, tarjetas cifradas)
+    ├── seeds/                # Usuarios (con sus claves) y tarjeta de prueba cifrada para desarrollo
     ├── test/                 # Tests con node:test
     └── src/
         ├── app.js            # createApp(): monta los routers y el manejo de errores
         ├── config.js         # loadConfig(): puerto, token, pimienta y rutas del certificado TLS
         ├── domain/
         │   ├── user.js       # toPublicUser() y toAdminUser(): datos sin contraseña
-        │   ├── card.js       # toCard() y toMaskedCard(): sin número completo ni CVV
+        │   ├── card.js       # toCard() y toEncryptedCard(): solo valores cifrados y wrappedKey
         │   └── session.js    # Claims del token ↔ usuario de la sesión
         ├── application/
         │   ├── auth-service.js  # Servicio de autenticación: login() → { token, user }
@@ -90,7 +91,7 @@ El proyecto es un repositorio único con dos paquetes gestionados mediante
                 ├── require-admin.js     # Middleware de rol: solo administradores
                 ├── admin-router.js      # /api/private/admin (usuarios)
                 ├── cards-router.js      # /api/private/cards (tarjetas propias)
-                ├── card-request.js      # Validación de tarjetas (Luhn, caducidad, CVV)
+                ├── card-request.js      # Validación estructural de tarjetas cifradas (UUID, tamaños)
                 ├── user-request.js      # Validación de las peticiones de usuarios
                 └── login-request.js     # Validación de la petición de login
 ```
@@ -598,15 +599,19 @@ campos, de modo que el servidor nunca lo vea en claro.
 
 - **Número, caducidad y CVV se guardan en texto claro** (PROVISIONAL), igual
   que la contraseña. Cualquiera con acceso al archivo `app.sqlite` los lee.
+  *(Resuelto en el paso 10.)*
 - No hay cifrado ni integridad de los registros: una modificación directa de
-  la base de datos no se detecta.
+  la base de datos no se detecta. *(Desde el paso 10, una alteración de los
+  valores cifrados la detecta el navegador al descifrar; el servidor sigue
+  pudiendo borrar filas sin que se note.)*
 
 ### Cómo evolucionará
 
 - **Fase 1.** Las columnas de datos de `CARD` se sustituyen por un sobre
   cifrado con AES-GCM (`envelope`, `version`); la clave aleatoria de cada
   tarjeta, envuelta con la clave pública de cada usuario, puede guardarse en
-  su fila de `USER_CARD`, una por relación.
+  su fila de `USER_CARD`, una por relación. *(Hecho en el paso 10 con un
+  cifrado por valor en vez de un sobre único, y `wrappedKey` en `USER_CARD`.)*
 - **Fase 2.** Compartir una tarjeta es insertar una fila con
   `isOwner = false` y la clave de la tarjeta envuelta para el nuevo usuario.
   Queda por decidir qué pasa con las tarjetas compartidas cuando se elimina a
@@ -683,7 +688,9 @@ implementaciones se prueban con la misma tabla de números de prueba.
 
 Todo lo que devuelve `cardService` pasa por `toMaskedCard`, que solo conserva
 `id`, `last4` (los 4 últimos dígitos), la caducidad y la fecha de alta. El
-número completo y el CVV entran por la API pero no vuelven a salir. Por eso
+número completo y el CVV entran por la API pero no vuelven a salir. *(Desde el
+paso 10 el servidor no ve nada: devuelve los valores cifrados y el navegador
+calcula el resumen.)* Por eso
 la modificación es **parcial** (`PATCH`): el formulario de edición rellena la
 caducidad y deja el número y el CVV vacíos ("vacío = no cambiar"), y el
 cliente envía solo los campos modificados. Con un `PUT` que sustituyese los
@@ -698,13 +705,15 @@ contraseña y se borra del estado tras cada envío.
 
 - **Número, caducidad y CVV se guardan en texto claro** (PROVISIONAL): con
   acceso a `app.sqlite` se ven. Desde el paso 6 ya no viajan en claro por la
-  red, pero el servidor los recibe y los ve.
+  red, pero el servidor los recibe y los ve. *(Resuelto en el paso 10.)*
 - **Se guarda el CVV**, ignorando PCI DSS (ver el paso 4).
 - **Borrado físico**: una tarjeta eliminada no se puede recuperar.
 - La fase 1 cambiará el modelo: el cliente cifrará la tarjeta completa antes
   de enviarla y el servidor no podrá enmascararla ni aplicar cambios
   parciales; descifrar, modificar y volver a cifrar con una clave nueva lo
-  hará el navegador.
+  hará el navegador. *(Hecho en el paso 10: como cada valor se cifra por
+  separado, el `PATCH` parcial se conserva, con la misma clave de tarjeta y
+  vectores nuevos.)*
 
 ## Cifrado del canal (paso 6)
 
@@ -819,7 +828,8 @@ Contra un observador de la red, TLS da:
 - **Los datos llegan en claro al servidor.** TLS protege el transporte, no el
   almacenamiento: el servidor sigue viendo y guardando la contraseña y las
   tarjetas en claro. Lo resolverá el cifrado en el navegador de la fase 1.
-  *(Para la contraseña, resuelto en el paso 8; las tarjetas siguen en claro.)*
+  *(Para la contraseña, resuelto en el paso 8; para las tarjetas, en el
+  paso 10.)*
 - **La confianza en un certificado autofirmado depende del usuario.** Si
   acepta el aviso del navegador sin comprobar la huella, no detectaría a un
   atacante que presentara otro certificado.
@@ -964,8 +974,9 @@ comprobar que se rechaza.
   con el primer bloque corrompido). AES-GCM lo resolvería.
 - **Las claves todavía no se usan.** Ni las tarjetas se cifran con ellas ni
   hay forma de cambiar la contraseña, que obligaría a volver a cifrar `k_U`
-  con la nueva `K_D`. *(Desde el paso 9 el navegador abre `k_U` en el login;
-  cifrar las tarjetas y cambiar la contraseña siguen pendientes.)*
+  con la nueva `K_D`. *(Desde el paso 9 el navegador abre `k_U` en el login y desde
+  el paso 10 cifra las tarjetas con ella; cambiar la contraseña sigue
+  pendiente.)*
 - **El servidor no puede saber si la clave pública tiene dueño.** Un alta
   hecha con `curl` puede enviar una `K_U` cuya `k_U` nadie tiene; con el
   panel no ocurre.
@@ -1166,10 +1177,149 @@ descifrar mientras exista la referencia.
 - **`k_U` está expuesta mientras dura la sesión.** Una extensión maliciosa o
   un XSS pueden descifrar con ella, aunque no exportarla. No hay CSP todavía.
 - **`k_U` todavía no se usa.** Las tarjetas siguen en claro: cifrarlas con una
-  clave AES por tarjeta envuelta con `K_U` es el siguiente paso.
+  clave AES por tarjeta envuelta con `K_U` es el siguiente paso. *(Resuelto en
+  el paso 10.)*
 - **Un usuario sin claves no puede entrar.** Con `keys: null` el navegador no
   inicia la sesión aunque la clave de login sea correcta. No existe ninguno
   en la práctica (el alta exige las claves desde el paso 7).
+
+## Tarjetas cifradas de extremo a extremo (paso 10)
+
+### Qué añade
+
+Las tarjetas dejan de existir en claro fuera del navegador. Antes de enviar
+una tarjeta, el navegador genera una clave aleatoria para ella, cifra cada
+valor con esa clave y envuelve la clave con la clave pública del usuario; el
+servidor guarda y devuelve esos cifrados sin poder abrirlos, y es el
+navegador quien, con la `k_U` que abrió en el paso 9, descifra la lista para
+mostrar el número enmascarado y la caducidad. Es el diagrama
+`docs/diagrama-secuencia-crear-tarjeta.md`, que queda implantado con dos
+cambios respecto a la propuesta: AES-GCM con datos asociados en lugar de CBC
+y clave de 256 bits. El módulo es `client/src/security/tarjetas-cifradas.js`;
+como `claves-usuario.js`, corre igual en Node, y lo usan la semilla, los tests
+del servidor y `scripts/cifrar-tarjeta.mjs`.
+
+### Notación
+
+| Símbolo | Significado |
+|---|---|
+| `id` | UUID v4 de la tarjeta, generado en el navegador antes de cifrar. |
+| `m_num`, `m_cad`, `m_cvv` | Valores en claro: número, caducidad (`MM/AAAA`) y CVV. |
+| `K_t` | Clave AES-256 aleatoria de la tarjeta (32 bytes de `getRandomValues`). |
+| `VI_x` | Vector de inicialización de 12 bytes, aleatorio y distinto por valor y por cifrado. |
+| `AAD_x` | Datos asociados de cada valor: `"<id>:<campo>"` en UTF-8 (`number`, `expiry` o `cvv`). Se autentican pero no se cifran ni viajan. |
+| `c_x` | `c_x = E_K_t(m_x)` con AES-256-GCM, `VI_x` y `AAD_x`; incluye la etiqueta de 128 bits. |
+| `w_U` | Clave de la tarjeta envuelta para el usuario U: `w_U = E_K_U(K_t)` con RSA-OAEP (SHA-256). 256 bytes con RSA de 2048. |
+
+Antes de cifrar, los textos se llevan a tamaño fijo rellenando por la
+izquierda con espacios: el número a 19 caracteres, el CVV a 4; la caducidad es
+siempre `MM/AAAA`. Así `c_num`, `c_cad` y `c_cvv` miden siempre 35, 23 y 20
+bytes, el tamaño del cifrado no revela si el número tiene 13 o 19 dígitos ni
+si el CVV es de 4 (Amex), y el servidor puede exigir tamaños exactos.
+
+### Flujo del alta
+
+1. El panel valida el contenido (Luhn, caducidad, CVV) con
+   `validation/card.js`. Es ya la única validación de contenido: el servidor
+   no puede repetirla porque no ve los datos.
+2. `cards.js` genera `id` con `crypto.randomUUID()` y llama a
+   `cifrarTarjeta(K_U, { id, number, expiry, cvv })`:
+   - `K_t ←` 32 bytes aleatorios, importados como `CryptoKey` AES-GCM **no
+     exportable**; los bytes en crudo se ponen a cero en cuanto está importada.
+   - Para cada valor, `VI_x ←` 12 bytes aleatorios y
+     `c_x = E_K_t(m_x)` con `AAD_x = "<id>:<campo>"`.
+   - `w_U = E_K_U(K_t)` con `subtle.encrypt` y RSA-OAEP sobre los 32 bytes en
+     crudo (no `wrapKey`: `K_U` y `k_U` se importaron con usos `encrypt` y
+     `decrypt`, y así `K_t` puede ser no exportable).
+3. `POST /api/private/cards` con
+   `{ id, number: { iv, ciphertext }, expiry: {…}, cvv: {…}, wrappedKey }`,
+   todo en base64. Los nombres de los campos viajan en claro; los valores,
+   cifrados. Nunca viajan `m_x` ni `K_t`.
+4. `card-request.js` valida solo la **estructura**: `id` es un UUID v4 en
+   minúsculas, cada `iv` mide 12 bytes, los `ciphertext` miden 35, 23 y 20,
+   `wrappedKey` mide 256 y no sobra ningún campo. Si no, `400`.
+5. El repositorio inserta en una transacción la fila de `CARD` con el `id`
+   del navegador y los pares `*Iv`/`*Ciphertext`, y la de `USER_CARD` con
+   `isOwner = true` y `wrappedKey`. Si el `id` ya existe (de cualquier
+   usuario), la clave primaria lo rechaza y la API responde `409`
+   (`CardConflictError`), que el panel muestra tal cual: con UUID aleatorios
+   no ocurre en la práctica, y un `id` repetido a propósito no sobrescribe
+   nada.
+6. `201` con la tarjeta tal como se ha guardado. El navegador la descifra
+   igual que las del listado para construir el resumen.
+
+### Listado y edición
+
+- `GET /api/private/cards` devuelve, para cada tarjeta, los tres pares
+  `{ iv, ciphertext }`, `wrappedKey` y `createdAt`. `toEncryptedCard`
+  sustituye a `toMaskedCard`: el servidor ya no puede calcular `last4`.
+- En el navegador, `descifrarTarjeta(k_U, tarjeta)` hace
+  `K_t = D_k_U(w_U)` y `m_x = D_K_t(c_x)` con el `VI_x` y el `AAD_x` de cada
+  valor, quita el relleno y devuelve los tres valores. `cards.js` se queda
+  solo con el resumen (`last4`, mes, año, `wrappedKey` y los cifrados, por si
+  hay que editar) y descarta el número completo y el CVV. Nada descifrado va a
+  la consola ni al almacenamiento del navegador.
+- Si algo falla (otra `k_U`, un byte alterado en `c_x` o en `VI_x`, un valor
+  copiado de otra tarjeta o de otro campo, un `w_U` manipulado), GCM o OAEP
+  lanzan y el módulo lo convierte en `TarjetaCifradaError`; el panel muestra
+  la fila «Tarjeta dañada: no se ha podido descifrar.», sin «Editar» y con
+  «Eliminar», y las demás tarjetas se ven con normalidad.
+- Editar reutiliza `K_t`: `abrirClaveTarjeta(k_U, w_U)` y
+  `cifrarValores(K_t, id, cambios)` cifran **solo los valores modificados**
+  con vectores nuevos, y `PATCH` los envía. `wrappedKey` no cambia y el
+  servidor lo rechaza en el cuerpo. El `PATCH` parcial del paso 5 sigue
+  existiendo porque cada valor tiene su propio cifrado.
+- Borrar no cambia: el servidor elimina la fila, cifrada o no.
+
+### Quién conoce cada dato
+
+| Dato | Quién lo conoce | Dónde se guarda |
+|---|---|---|
+| `m_num`, `m_cad`, `m_cvv` | Solo el navegador, mientras cifra o calcula el resumen. | En ningún sitio. |
+| `K_t` | Solo el navegador, como `CryptoKey` no exportable, mientras cifra o descifra esa tarjeta. | Solo envuelta, como `w_U`. |
+| `VI_x`, `c_x` | El servidor y el navegador. | `CARD`. Sin `K_t` no se abren. |
+| `w_U` | El servidor y el navegador. | `USER_CARD`, en la fila del propietario. Sin `k_U` no se abre. |
+| `id` | Todos. | `CARD.id`; forma parte de `AAD_x`. |
+| `k_U` | Solo el navegador del usuario, durante la sesión (paso 9). | Cifrada como `c_kU` en `USER`. |
+
+Un volcado de `app.sqlite` contiene `c_x`, `w_U` y `c_kU`, y para abrir
+cualquiera de ellos hace falta una cadena que empieza en la contraseña del
+usuario, que el servidor nunca ve: `pw → K_D → k_U → K_t → m_x`.
+
+### Semilla, migración y pruebas
+
+La migración `20261110180000_encrypt_card_columns.cjs` **vacía `USER_CARD` y
+`CARD`** antes de cambiar las columnas: cifrar las tarjetas en claro desde el
+servidor contradiría el modelo (el servidor tendría que leerlas) y las únicas
+que existen son las de la semilla, así que hay que volver a sembrar. La semilla cifra la tarjeta de prueba del empleado
+con `cifrarTarjeta` y la clave pública recién generada; el test de la
+migración comprueba que esa tarjeta se descifra con la `k_U` del empleado
+abierta con `demo1234`. Los tests del servidor usan cuerpos cifrados reales
+(`encryptedTestCard` en `server/test/helpers.js`), comprueban que ninguna
+respuesta ni ninguna fila contiene un valor en claro y que un `id` repetido,
+también de otro usuario, da `409`. Los del módulo
+(`tarjetas-cifradas.test.js`) cubren los tamaños fijos, que dos cifrados de
+la misma tarjeta son distintos y que cualquier manipulación falla.
+
+### Lo que este paso no protege
+
+- **El servidor puede borrar, duplicar o reordenar tarjetas** sin que el
+  navegador lo note: GCM protege cada valor y su pertenencia a una tarjeta y
+  un campo, no el conjunto de tarjetas de un usuario.
+- **`k_U` y `K_t` están expuestas a un XSS** mientras dura la sesión: un
+  script inyectado puede descifrar con ellas aunque no exportarlas. Sigue sin
+  haber CSP.
+- **`c_kU` y `K_U` no tienen integridad ni firma** (paso 9). Un servidor que
+  sustituya el par de claves de un usuario leería las tarjetas que ese usuario
+  cifrase desde entonces; las anteriores seguirían cerradas. La defensa es
+  firmar `K_U`.
+- **Se sigue guardando el CVV**, cifrado, porque lo exige la práctica (paso
+  4). Cifrado o no, PCI DSS lo prohíbe.
+- **Nada de esto se comparte todavía.** `w_U` solo existe para el
+  propietario; compartir y rotar `K_t` son la fase 2.
+- **La tarjeta no se puede recuperar si el usuario pierde `k_U`** (por
+  ejemplo, si se regenera su par de claves): no hay copia de `K_t` fuera de
+  `w_U`.
 
 ## Trabajo futuro
 
@@ -1179,9 +1329,13 @@ descifrar mientras exista la referencia.
   (equipo) y considerar una derivación lenta de `K_D` en el cliente.
 - Elegir la KDF definitiva de la clave de login y medir sus parámetros
   (equipo); versionar la pimienta por usuario para poder rotarla.
-- Cifrar las tarjetas en el navegador con una clave AES aleatoria por
-  tarjeta envuelta con `K_U`, y descifrarlas con `k_U`.
-- Firmar `K_U` y proteger la integridad de `c_kU` (AES-GCM o MAC).
+- Compartir tarjetas (fase 2): añadir a `USER_CARD` una fila con `w_V`, la
+  misma `K_t` envuelta para el otro usuario; rotar `K_t` (volver a cifrar
+  los valores con una clave nueva) al dejar de compartir; decidir qué pasa
+  con las compartidas de un propietario eliminado.
+- Firmar `K_U` y proteger la integridad de `c_kU` (AES-GCM, como ya se hace
+  con las tarjetas, o un MAC): sin eso, un servidor que sustituya el par de
+  claves de un usuario podría leer las tarjetas que se cifren desde entonces.
 - Revocar o renovar los tokens, para poder cerrar sesión en el servidor.
 - Autenticación mutua TLS entre el proxy de Vite y la API, con el
   certificado del cliente (descartada por ahora; se puede retomar).
@@ -1197,6 +1351,3 @@ descifrar mientras exista la referencia.
   acceso en cuanto se le borra.
 - Sustituir el alta con contraseña inicial por la invitación de la fase 1 y
   añadir la desactivación de cuentas y un registro de auditoría.
-- Cifrar los datos de las tarjetas en el navegador (fase 1) y compartir
-  tarjetas entre usuarios (fase 2), decidiendo qué pasa con las tarjetas
-  compartidas de un propietario eliminado.

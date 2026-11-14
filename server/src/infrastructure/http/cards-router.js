@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { CardForbiddenError, CardNotFoundError } from '../../application/errors.js';
+import { CardConflictError, CardForbiddenError, CardNotFoundError } from '../../application/errors.js';
 import { parseCardId, parseCreateCardRequest, parseUpdateCardRequest } from './card-request.js';
 
 export const INVALID_CARD_REQUEST = 'Datos de tarjeta no válidos';
@@ -7,7 +7,8 @@ export const INVALID_CARD_REQUEST = 'Datos de tarjeta no válidos';
 /**
  * Tarjetas del propio usuario (/api/private/cards). Se monta dentro de la
  * sección privada, así que la autenticación ya está hecha. El usuario sale
- * siempre del token, nunca del cuerpo ni de la URL.
+ * siempre del token, nunca del cuerpo ni de la URL. Los valores de la
+ * tarjeta llegan y salen cifrados por el navegador (paso 10).
  */
 export function createCardsRouter({ cardService }) {
   const router = Router();
@@ -50,6 +51,7 @@ export function createCardsRouter({ cardService }) {
     }
     if (error instanceof CardNotFoundError) return response.status(404).json({ error: error.message });
     if (error instanceof CardForbiddenError) return response.status(403).json({ error: error.message });
+    if (error instanceof CardConflictError) return response.status(409).json({ error: error.message });
     return next(error);
   });
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import { createCardRepository } from '../src/infrastructure/database/card-repository.js';
-import { getTestUserKeys, loginKeyFor, weakPublicKey } from './helpers.js';
+import { encryptedTestCard, getTestUserKeys, loginKeyFor, weakPublicKey } from './helpers.js';
 import { startTestServer } from './test-app.js';
 
 const USERS_PATH = '/api/private/admin/users';
@@ -222,9 +222,10 @@ describe('administración de usuarios: operaciones', () => {
     const cards = createCardRepository(knex);
     const admin = await findUser('admin@empresa.com');
     const employee = await findUser('empleado@empresa.com');
-    const card = { number: '5555555555554444', expiryMonth: 3, expiryYear: 2030, cvv: '012' };
-    const owned = [await cards.createForOwner(employee.id, card), await cards.createForOwner(employee.id, card)];
-    const adminCard = await cards.createForOwner(admin.id, card);
+    const { publicKey } = await getTestUserKeys();
+    const card = () => encryptedTestCard(publicKey);
+    const owned = [await cards.createForOwner(employee.id, await card()), await cards.createForOwner(employee.id, await card())];
+    const adminCard = await cards.createForOwner(admin.id, await card());
 
     await expectResponse(client.request('DELETE', `${USERS_PATH}/${employee.id}`, { token: adminToken }), 204);
 

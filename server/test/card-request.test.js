@@ -1,114 +1,113 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  CIPHERTEXT_LENGTHS,
+  WRAPPED_KEY_LENGTH,
   parseCardId,
   parseCreateCardRequest,
   parseUpdateCardRequest,
-  passesLuhn,
 } from '../src/infrastructure/http/card-request.js';
 
-// Fecha fija: 15 de octubre de 2026.
-const NOW = new Date(2026, 9, 15);
-const VALID = { number: '4111 1111 1111 1111', expiryMonth: 12, expiryYear: 2030, cvv: '123' };
+const ID = 'b6f1c2de-0000-4000-8000-000000000001';
 
-const create = (overrides) => parseCreateCardRequest({ ...VALID, ...overrides }, { now: NOW });
-const update = (body) => parseUpdateCardRequest(body, { now: NOW });
+function base64Of(length, fill = 7) {
+  return Buffer.alloc(length, fill).toString('base64');
+}
 
-// Misma tabla de casos que client/src/validation/card.test.js.
-const LUHN_CASES = [
-  ['4111111111111111', true], // Visa de prueba
-  ['5555555555554444', true], // Mastercard de prueba
-  ['378282246310005', true], // Amex de prueba
-  ['4111111111111112', false],
-  ['5555555555554445', false],
-  ['378282246310006', false],
-];
+function value(field, fill = 7) {
+  return { iv: base64Of(12, fill), ciphertext: base64Of(CIPHERTEXT_LENGTHS[field], fill) };
+}
 
-describe('passesLuhn', () => {
-  for (const [number, expected] of LUHN_CASES) {
-    it(`${number} → ${expected}`, () => {
-      assert.equal(passesLuhn(number), expected);
-    });
-  }
-});
+function validBody() {
+  return {
+    id: ID,
+    number: value('number'),
+    expiry: value('expiry'),
+    cvv: value('cvv'),
+    wrappedKey: base64Of(WRAPPED_KEY_LENGTH),
+  };
+}
 
 describe('parseCreateCardRequest', () => {
-  it('normaliza un alta válida quitando espacios y guiones', () => {
-    assert.deepEqual(create(), { number: '4111111111111111', expiryMonth: 12, expiryYear: 2030, cvv: '123' });
-    assert.equal(create({ number: '5555-5555-5555-4444' }).number, '5555555555554444');
-    assert.equal(create({ number: '378282246310005', cvv: '1234' }).cvv, '1234');
+  it('acepta un cuerpo cifrado válido y normaliza el id a minúsculas', () => {
+    const body = { ...validBody(), id: ID.toUpperCase() };
+    assert.deepEqual(parseCreateCardRequest(body), { ...validBody(), id: ID });
   });
 
-  it('rechaza números que no superan Luhn, de longitud incorrecta o con letras', () => {
-    for (const number of ['4111111111111112', '411111111111', '41111111111111111111', '4111 1111 1111 111a', 4111111111111111]) {
-      assert.equal(create({ number }), null, String(number));
+  it('no comprueba el contenido: cualquier base64 de los tamaños correctos vale', () => {
+    assert.ok(parseCreateCardRequest({ ...validBody(), number: value('number', 255) }));
+  });
+
+  it('rechaza lo que no es un objeto con exactamente los cinco campos', () => {
+    const { wrappedKey, ...withoutKey } = validBody();
+    for (const body of [null, 'texto', ['a'], {}, withoutKey, { ...validBody(), userId: 1 }, { ...validBody(), last4: '1111' }]) {
+      assert.equal(parseCreateCardRequest(body), null, JSON.stringify(body));
     }
   });
 
-  it('rechaza meses fuera de 1–12 y años de dos cifras o demasiado lejanos', () => {
-    for (const expiry of [
-      { expiryMonth: 0 }, { expiryMonth: 13 }, { expiryMonth: '12' }, { expiryMonth: 6.5 },
-      { expiryYear: 30 }, { expiryYear: 2047 }, { expiryYear: '2030' },
-    ]) {
-      assert.equal(create(expiry), null, JSON.stringify(expiry));
-    }
-    assert.ok(create({ expiryYear: 2046 }));
-  });
-
-  it('rechaza una tarjeta caducada el mes pasado y acepta la que caduca este mes', () => {
-    assert.equal(create({ expiryMonth: 9, expiryYear: 2026 }), null);
-    assert.equal(create({ expiryMonth: 12, expiryYear: 2025 }), null);
-    assert.ok(create({ expiryMonth: 10, expiryYear: 2026 }));
-  });
-
-  it('rechaza CVV de 2 o 5 dígitos, con letras o numérico', () => {
-    for (const cvv of ['12', '12345', '12a', 123]) {
-      assert.equal(create({ cvv }), null, String(cvv));
+  it('rechaza un id que no es un UUID v4', () => {
+    for (const id of ['123', '', 12, 'b6f1c2de-0000-1000-8000-000000000001', `${ID}x`]) {
+      assert.equal(parseCreateCardRequest({ ...validBody(), id }), null, String(id));
     }
   });
 
-  it('rechaza campos extra, campos ausentes y cuerpos que no son objeto', () => {
-    assert.equal(create({ userId: 2 }), null);
-    const { cvv: _cvv, ...withoutCvv } = VALID;
-    assert.equal(parseCreateCardRequest(withoutCvv, { now: NOW }), null);
-    for (const body of [null, undefined, 'tarjeta', [VALID], 42]) {
-      assert.equal(parseCreateCardRequest(body, { now: NOW }), null);
+  it('rechaza cifrados de tamaño incorrecto', () => {
+    for (const field of ['number', 'expiry', 'cvv']) {
+      const short = { iv: base64Of(12), ciphertext: base64Of(CIPHERTEXT_LENGTHS[field] - 1) };
+      const long = { iv: base64Of(12), ciphertext: base64Of(CIPHERTEXT_LENGTHS[field] + 1) };
+      assert.equal(parseCreateCardRequest({ ...validBody(), [field]: short }), null, `${field} corto`);
+      assert.equal(parseCreateCardRequest({ ...validBody(), [field]: long }), null, `${field} largo`);
     }
+  });
+
+  it('rechaza vectores que no miden 12 bytes', () => {
+    const bad = { ...value('cvv'), iv: base64Of(16) };
+    assert.equal(parseCreateCardRequest({ ...validBody(), cvv: bad }), null);
+  });
+
+  it('rechaza base64 ilegible o con tamaño que no cuadra', () => {
+    for (const wrappedKey of ['no-es-base64!', base64Of(255), base64Of(257), `${base64Of(255)}A`, 42]) {
+      assert.equal(parseCreateCardRequest({ ...validBody(), wrappedKey }), null, String(wrappedKey));
+    }
+    const bad = { ...value('number'), ciphertext: 'abc' };
+    assert.equal(parseCreateCardRequest({ ...validBody(), number: bad }), null);
+  });
+
+  it('rechaza un valor con campos de más o de menos', () => {
+    assert.equal(parseCreateCardRequest({ ...validBody(), cvv: { ...value('cvv'), plain: '123' } }), null);
+    assert.equal(parseCreateCardRequest({ ...validBody(), cvv: { iv: base64Of(12) } }), null);
+    assert.equal(parseCreateCardRequest({ ...validBody(), cvv: 'texto' }), null);
   });
 });
 
 describe('parseUpdateCardRequest', () => {
-  it('devuelve solo los campos enviados, normalizados', () => {
-    assert.deepEqual(update({ expiryMonth: 6, expiryYear: 2031 }), { expiryMonth: 6, expiryYear: 2031 });
-    assert.deepEqual(update({ number: '5555 5555 5555 4444' }), { number: '5555555555554444' });
-    assert.deepEqual(update({ cvv: '999' }), { cvv: '999' });
-    assert.deepEqual(update(VALID), create());
+  it('devuelve solo los valores enviados', () => {
+    const expiry = value('expiry', 9);
+    assert.deepEqual(parseUpdateCardRequest({ expiry }), { expiry });
+    const number = value('number', 3);
+    const cvv = value('cvv', 4);
+    assert.deepEqual(parseUpdateCardRequest({ number, cvv }), { number, cvv });
   });
 
-  it('rechaza un cuerpo vacío o que no es objeto', () => {
-    for (const body of [{}, null, 'x', []]) {
-      assert.equal(update(body), null);
+  it('rechaza un cuerpo vacío, no objeto o con campos no admitidos', () => {
+    for (const body of [{}, null, [], 'x', { id: ID, cvv: value('cvv') }, { wrappedKey: base64Of(256) }, { cvv: value('cvv'), userId: 1 }]) {
+      assert.equal(parseUpdateCardRequest(body), null, JSON.stringify(body));
     }
   });
 
-  it('exige el mes y el año de caducidad juntos', () => {
-    assert.equal(update({ expiryMonth: 3 }), null);
-    assert.equal(update({ expiryYear: 2031 }), null);
-  });
-
-  it('aplica a cada campo las mismas reglas que el alta', () => {
-    assert.equal(update({ number: '4111111111111112' }), null);
-    assert.equal(update({ expiryMonth: 9, expiryYear: 2026 }), null);
-    assert.equal(update({ cvv: '12a' }), null);
-    assert.equal(update({ userId: 2 }), null);
-    assert.equal(update({ cvv: '123', userId: 2 }), null);
+  it('rechaza un valor con tamaño incorrecto aunque los demás sean válidos', () => {
+    const bad = { iv: base64Of(12), ciphertext: base64Of(CIPHERTEXT_LENGTHS.cvv + 1) };
+    assert.equal(parseUpdateCardRequest({ number: value('number'), cvv: bad }), null);
   });
 });
 
 describe('parseCardId', () => {
-  it('acepta un UUID y rechaza cualquier otro formato', () => {
-    assert.equal(parseCardId('B6F1C2DE-0000-4000-8000-000000000001'), 'b6f1c2de-0000-4000-8000-000000000001');
-    for (const id of ['123', 'abc', '', undefined, 'b6f1c2de-0000-4000-8000-00000000000']) {
+  it('acepta un UUID y lo normaliza a minúsculas', () => {
+    assert.equal(parseCardId(ID.toUpperCase()), ID);
+  });
+
+  it('rechaza lo que no es un UUID', () => {
+    for (const id of ['123', '', undefined, 'b6f1c2de-0000-4000-8000-00000000000']) {
       assert.equal(parseCardId(id), null, String(id));
     }
   });
