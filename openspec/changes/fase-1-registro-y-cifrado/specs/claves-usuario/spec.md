@@ -55,9 +55,9 @@ SHALL verificar antes ese certificado.
 - **THEN** el cliente rechaza esa clave y no cifra nada con ella
 
 ### Requirement: Claves privadas solo en memoria
-En el navegador, las claves privadas descifradas y la clave de cifrado
-derivada SHALL existir solo en memoria, como claves no exportables siempre
-que sea posible. No SHALL guardarse en `localStorage`, `sessionStorage`,
+El navegador SHALL mantener las claves privadas descifradas y la clave de
+cifrado derivada solo en memoria, como claves no exportables siempre que sea
+posible, y SHALL NOT guardarlas en `localStorage`, `sessionStorage`,
 IndexedDB ni cookies.
 
 #### Scenario: Inspección del almacenamiento del navegador
