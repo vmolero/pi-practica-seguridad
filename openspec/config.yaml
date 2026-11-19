@@ -39,10 +39,16 @@ rules:
     - Redacta la propuesta en español
     - Enumera qué secciones de README.md y de la memoria interna (docs/primera-memoria/*.md, p. ej. implementacion-y-seguridad.md, manual-de-usuario.md) se verán afectadas por el cambio
     - Si el cambio añade, sustituye o retira código criptográfico (derivación de claves, hash, sal, pimienta, cifrado, firma, claves asimétricas, doble factor, reto-respuesta), indica que habrá que actualizar docs/criptografia-implementada.md, la página que explica en lenguaje sencillo qué criptografía hay en el código y la ilustra con un ejemplo de valores reales
+    - "Security: indica el impacto en seguridad, aunque no lo haya (autenticación, secretos, exposición de datos, permisos, superficie de ataque)"
   tasks:
     - Redacta las tareas en español, también las de documentación
     - Incluye siempre tareas explícitas para actualizar README.md y la memoria interna (docs/primera-memoria/*.md) de modo que reflejen el cambio
     - Si el cambio toca código criptográfico, incluye una tarea [claude] para actualizar docs/criptografia-implementada.md en el mismo estilo (lenguaje sencillo y directo, tabla «Dónde está el código», pasos de cada operación, ejemplo con valores reales reproducibles con los scripts del repo, tabla «Qué es provisional y qué falta»)
+    - "Security: incluye tareas para los tests de seguridad y una autorrevisión final de seguridad del diff (secretos, autorización, tratamiento de entradas, dependencias)"
+  design:
+    - "Security: incluye una sección «Consideraciones de seguridad» (amenazas que introduce o mitiga, gestión de secretos, autorización y aislamiento entre usuarios, validación de entradas, datos sensibles en logs)"
+  specs:
+    - "Security: añade escenarios para el comportamiento relevante para la seguridad (acceso no autorizado denegado, entrada inválida o maliciosa rechazada, sin fugas de datos sensibles)"
 
 operations:
   apply:
